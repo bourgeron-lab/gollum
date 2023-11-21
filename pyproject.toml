@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gollumpy"
+authors = [
+    {name = "Freddy Cliquet", email = "freddy.cliquet@pasteur.fr"},
+]
+description = "detection of rings on acrocentric chromosomes using short reads sequencing"
+requires-python = ">=3.8"
+keywords = ["genomics", "structural-variation", "chromosomal-anomaly-detection"]
+version = "1.0.0"
+dependencies = [
+    'numpy',
+    'pandas',
+    'pyranges',
+    'scikit-learn',
+]
+
+[project.scripts]
+gollum = "gollumpy:main"

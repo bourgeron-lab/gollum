@@ -1,0 +1,40 @@
+[16:39:23] {__init__.py:18} INFO - 
+cram: C0011LO.disc.cram
+chr: chr22
+sample_name: C0011LO
+fasta: chm13v2.0.fa
+output_dir: output
+blacklist_bed: None
+e_value: 0.01
+bit_score: 150
+dbscan_eps: 100
+dbscan_min: 5
+
+
+[16:39:23] {__init__.py:22} DEBUG - 
+samtools command for discordant extraction:
+samtools view -F 2 -q 40 --reference chm13v2.0.fa C0011LO.disc.cram chr22:14200000
+
+[16:39:24] {__init__.py:27} INFO - 
+nb discordant extracted: 70129
+
+[16:39:24] {__init__.py:55} INFO - 
+nb reads clustered: 11
+
+[16:39:24] {__init__.py:67} INFO - 
+Extracting mate from the cram file
+
+[16:39:25] {__init__.py:79} INFO - 
+running blat on the mates:
+blat chm13v2.0.fa output/C0011LO.read2_for_blat.fasta -out=blast8 output/C0011LO.read2.blat.tsv
+
+[16:39:57] {__init__.py:90} INFO - 
+specificity score for acrocentric: 9.704158145875937
+
+[16:39:58] {__init__.py:108} INFO - 
+nb read mapped within PHR: 11
+
+[16:39:58] {__init__.py:143} INFO - 
+sample	cluster	breakpoint	supporting_reads	acrocentric_specificity
+C0011LO	cluster_0	chr22:47097797	11	9.704158145875937
+
