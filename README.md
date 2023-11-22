@@ -1,15 +1,17 @@
 # gollum
-detection of rings on acrocentric chromosomes using short reads sequencing
+Detection of rings on acrocentric chromosomes using short reads sequencing
 
 ## Installation
 
-This tool is available through the pip package manager in python and can be installed with: `pip install gollumpy`.
+This tool is available through the pip package manager in python (>=3.8) and can be installed with:  
+`pip install gollumpy`.
 
 `gollum` depends on 2 additional tools:
 - `samtools` which can be installed by various means including `conda` or `brew` for mac
 - `blat` which can be installed using `conda` or a binary can directly be downloaded from http://hgdownload.soe.ucsc.edu/admin/exe/
 
 ## Usage
+`gollum` is designed to function on whole genome sequencing aligned using T2T reference genome.
 
 ```
 gollum -h
@@ -42,7 +44,7 @@ optional arguments:
 
 We are providing a simplified cram file in the test directory in this repository. In addition to this file, to run gollum, you will also need the T2T reference fasta file, which can be downloaded from https://github.com/marbl/CHM13 ([direct link to the file](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/analysis_set/chm13v2.0.fa.gz)).
 
-You will then be able to run the exemple using:
+You will then be able to run the exemple using:  
 `gollum C0011LO.disc.cram -s C0011LO -f chm13v2.0.fa -o output`
 
 Expected output:
