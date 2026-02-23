@@ -1,0 +1,22 @@
+# SAAC (Short Arm Acrocentric Chromosome) region boundaries on T2T-CHM13v2.0
+# saac_end = centromere boundary position (0-based)
+
+[chr13]
+saac_start = 0
+saac_end = 16500000
+
+[chr14]
+saac_start = 0
+saac_end = 11400000
+
+[chr15]
+saac_start = 0
+saac_end = 17200000
+
+[chr21]
+saac_start = 0
+saac_end = 11100000
+
+[chr22]
+saac_start = 0
+saac_end = 14200000

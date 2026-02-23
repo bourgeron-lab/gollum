@@ -1,8 +1,32 @@
+# Reference genomes (too large)
 chm13v2.0.fa
 chm13v2.0.fa.fai
-dist
-gollumpy.egg-info
+
+# Build artifacts
+dist/
+*.egg-info/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# uv
+uv.lock
+
+# Test artifacts
 C0011LO.make_test.sh
 C0011LO.mate.bed
-requirements.txt
+
+# OS
 .DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Old v1 files
+requirements.txt
+
+# Examples (large CRAM/FASTA files)
+examples/

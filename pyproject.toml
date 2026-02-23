@@ -1,22 +1,43 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "gollumpy"
+version = "2.0.0"
+description = "Detection of ring chromosomes on acrocentric chromosomes from short-read WGS"
+requires-python = ">=3.10"
 authors = [
     {name = "Freddy Cliquet", email = "freddy.cliquet@pasteur.fr"},
 ]
-description = "detection of rings on acrocentric chromosomes using short reads sequencing"
-requires-python = ">=3.8"
-keywords = ["genomics", "structural-variation", "chromosomal-anomaly-detection"]
-version = "1.0.0"
+keywords = ["genomics", "structural-variation", "chromosomal-anomaly-detection", "ring-chromosome"]
 dependencies = [
-    'numpy',
-    'pandas',
-    'pyranges',
-    'scikit-learn',
+    "pandas",
+    "numpy",
+    "hdbscan",
+    "pysam",
+    "mappy",
+    "click",
 ]
 
 [project.scripts]
-gollum = "gollumpy:main"
+gollum = "gollumpy.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests requiring external data (T2T reference, full CRAM files)",
+]
