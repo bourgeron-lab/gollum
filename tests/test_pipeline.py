@@ -129,6 +129,42 @@ class TestRunPipeline:
         result = run_pipeline(config)
         assert result == []
 
+    @patch("gollumpy.pipeline.align_mates")
+    @patch("gollumpy.pipeline.extract_mate_sequences")
+    @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
+    def test_phr_filter_removes_non_target_chrom(
+        self,
+        mock_extract: MagicMock,
+        mock_mate_seq: MagicMock,
+        mock_align: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Reads whose best SAAC hit is NOT on the target chrom are filtered out."""
+        config = _make_config(tmp_path)  # target_chrom = chr22
+
+        reads_df = pd.DataFrame([
+            {"read_id": f"r{i}", "chrom": "chr22", "pos": 47097797 + i, "mapq": 60,
+             "mate_chrom": "chr22", "mate_pos": 5000000}
+            for i in range(5)
+        ])
+        mock_extract.return_value = reads_df
+        mock_mate_seq.return_value = reads_df.assign(mate_sequence="ACGT" * 30)
+
+        # All reads align to non-target SAAC chroms (chr15, chr13)
+        aligned_df = reads_df.assign(
+            mate_sequence="ACGT" * 30,
+            best_mlen=148,
+            best_divergence=0.01,
+            n_saac_hits=1,
+            best_align_chrom="chr15",  # NOT the target (chr22)
+        )
+        mock_align.return_value = aligned_df
+
+        result = run_pipeline(config)
+        # All reads filtered by PHR filter → no ring detected
+        assert result == []
+        assert (config.output_dir / "test_sample.summary.tsv").exists()
+
     @patch("gollumpy.pipeline.build_aligner")
     @patch("gollumpy.pipeline.compute_mate_concordance")
     @patch("gollumpy.pipeline.cluster_breakpoints")
@@ -240,6 +276,7 @@ class TestRunPipeline:
             best_mlen=148,
             best_divergence=0.01,
             n_saac_hits=1,
+            best_align_chrom="chr22",
         )
         mock_cluster.return_value = ([], pd.DataFrame())
 

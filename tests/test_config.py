@@ -48,7 +48,7 @@ class TestClusterParams:
     def test_defaults(self) -> None:
         params = ClusterParams()
         assert params.min_cluster_size == 3
-        assert params.min_samples == 2
+        assert params.min_samples == 5
         assert params.cluster_selection_epsilon == 100.0
         assert params.allow_single_cluster is True
         assert params.min_supporting_reads == 5
