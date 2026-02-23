@@ -5,3 +5,4 @@ gollumpy.egg-info
 C0011LO.make_test.sh
 C0011LO.mate.bed
 requirements.txt
+.DS_Store
