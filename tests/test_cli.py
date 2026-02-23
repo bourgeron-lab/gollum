@@ -26,6 +26,7 @@ class TestCLI:
         assert "--chr" in result.output
         assert "--cluster-epsilon" in result.output
         assert "--allow-single" in result.output
+        assert "--min-supporting-reads" in result.output
 
     def test_grch38_help(self, mock_pipeline) -> None:  # noqa: ANN001
         runner = CliRunner()
@@ -57,6 +58,7 @@ class TestCLI:
         assert config.sample_name == "sample"
         assert config.cluster_params.cluster_selection_epsilon == 100.0
         assert config.cluster_params.allow_single_cluster is True
+        assert config.cluster_params.min_supporting_reads == 5
 
     def test_t2t_custom_options(self, mock_pipeline, tmp_path: Path) -> None:  # noqa: ANN001
         fasta = tmp_path / "ref.fa"
@@ -157,6 +159,26 @@ class TestCLI:
         ])
 
         assert result.exit_code != 0
+
+    def test_min_supporting_reads_option(self, mock_pipeline, tmp_path: Path) -> None:  # noqa: ANN001
+        fasta = tmp_path / "ref.fa"
+        fasta.touch()
+        cram = tmp_path / "sample.cram"
+        cram.touch()
+        out = tmp_path / "out"
+
+        mock_pipeline.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "t2t", str(cram),
+            "-f", str(fasta),
+            "-o", str(out),
+            "--min-supporting-reads", "10",
+        ])
+
+        assert result.exit_code == 0
+        config = mock_pipeline.call_args[0][0]
+        assert config.cluster_params.min_supporting_reads == 10
 
     def test_version(self, mock_pipeline) -> None:  # noqa: ANN001
         runner = CliRunner()

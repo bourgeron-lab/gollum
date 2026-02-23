@@ -118,6 +118,9 @@ class TestClusterBreakpoints:
         assert len(result) >= 1
         for bp in result:
             assert bp.acro_specificity is None
+            assert bp.mate_concordance is None
+            assert bp.dominant_saac_chrom is None
+            assert bp.ring_score is None
 
     def test_returns_labeled_dataframe(self) -> None:
         np.random.seed(42)

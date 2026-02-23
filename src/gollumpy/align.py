@@ -99,6 +99,12 @@ def align_mates(reads_df: pd.DataFrame, config: GollumConfig) -> pd.DataFrame:
     reads_with_saac = set(saac_hits["read_id"])
 
     # Compute per-read best alignment stats for SAAC hits
+    # Find each read's best SAAC hit (highest mlen, lowest divergence as tiebreaker)
+    saac_hits_sorted = saac_hits.sort_values(
+        ["read_id", "mlen", "divergence"], ascending=[True, False, True],
+    )
+    best_hit_per_read = saac_hits_sorted.groupby("read_id").first().reset_index()
+
     saac_stats = (
         saac_hits.groupby("read_id")
         .agg(
@@ -107,6 +113,12 @@ def align_mates(reads_df: pd.DataFrame, config: GollumConfig) -> pd.DataFrame:
             n_saac_hits=("read_id", "count"),
         )
         .reset_index()
+    )
+
+    # Add the SAAC chromosome of each read's best hit
+    saac_stats = saac_stats.merge(
+        best_hit_per_read[["read_id", "align_chrom"]].rename(columns={"align_chrom": "best_align_chrom"}),
+        on="read_id",
     )
 
     # Filter original reads to those with SAAC hits and merge stats
@@ -161,3 +173,23 @@ def compute_acro_specificity(
         return float("inf") if acro_mlen_sum > 0 else None
 
     return acro_mlen_sum / non_acro_mlen_sum
+
+
+def compute_mate_concordance(cluster_reads: pd.DataFrame) -> tuple[float, str]:
+    """Compute mate concordance for a cluster of reads.
+
+    Mate concordance is the fraction of reads whose ``best_align_chrom``
+    matches the cluster's most frequent (dominant) SAAC chromosome.
+
+    Real rings typically show concordance >= 0.9 (mates converge on one
+    SAAC chromosome); noise clusters scatter across multiple (~0.3-0.5).
+
+    Returns ``(concordance_ratio, dominant_chrom)``.
+    """
+    if cluster_reads.empty or "best_align_chrom" not in cluster_reads.columns:
+        return 0.0, ""
+
+    chrom_counts = cluster_reads["best_align_chrom"].value_counts()
+    dominant_chrom = chrom_counts.index[0]
+    concordance = chrom_counts.iloc[0] / len(cluster_reads)
+    return float(concordance), str(dominant_chrom)

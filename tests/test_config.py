@@ -35,8 +35,8 @@ class TestFilterParams:
         params = FilterParams()
         assert params.min_mapq_r1 == 60
         assert params.samtools_mapq == 40
-        assert params.min_alignment_score == 100
-        assert params.max_divergence == 0.05
+        assert params.min_alignment_score == 80
+        assert params.max_divergence == 0.06
 
     def test_custom(self) -> None:
         params = FilterParams(min_mapq_r1=30, max_divergence=0.1)
@@ -51,6 +51,7 @@ class TestClusterParams:
         assert params.min_samples == 2
         assert params.cluster_selection_epsilon == 100.0
         assert params.allow_single_cluster is True
+        assert params.min_supporting_reads == 5
 
 
 class TestGollumConfig:
@@ -285,3 +286,34 @@ class TestModels:
         )
         assert bp.supporting_reads == 11
         assert bp.confidence == 0.95
+
+    def test_breakpoint_new_fields_default_none(self) -> None:
+        bp = Breakpoint(
+            chrom="chr22",
+            position=47097797,
+            pos_min=47097637,
+            pos_max=47097906,
+            supporting_reads=11,
+            confidence=0.95,
+            acro_specificity=9.7,
+        )
+        assert bp.mate_concordance is None
+        assert bp.dominant_saac_chrom is None
+        assert bp.ring_score is None
+
+    def test_breakpoint_with_all_fields(self) -> None:
+        bp = Breakpoint(
+            chrom="chr22",
+            position=47097797,
+            pos_min=47097637,
+            pos_max=47097906,
+            supporting_reads=11,
+            confidence=0.95,
+            acro_specificity=9.7,
+            mate_concordance=0.91,
+            dominant_saac_chrom="chr22",
+            ring_score=7.5,
+        )
+        assert bp.mate_concordance == 0.91
+        assert bp.dominant_saac_chrom == "chr22"
+        assert bp.ring_score == 7.5

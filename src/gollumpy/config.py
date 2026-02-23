@@ -27,8 +27,8 @@ class FilterParams:
 
     min_mapq_r1: int = 60
     samtools_mapq: int = 40
-    min_alignment_score: int = 100
-    max_divergence: float = 0.05
+    min_alignment_score: int = 80
+    max_divergence: float = 0.06
 
 
 @dataclass
@@ -39,6 +39,7 @@ class ClusterParams:
     min_samples: int = 2
     cluster_selection_epsilon: float = 100.0
     allow_single_cluster: bool = True
+    min_supporting_reads: int = 5
 
 
 @dataclass

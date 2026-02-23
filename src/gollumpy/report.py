@@ -14,6 +14,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _fmt(value: float | None, decimals: int = 3) -> str:
+    """Format a nullable float for output."""
+    if value is None:
+        return "NA"
+    return f"{value:.{decimals}f}"
+
+
 def generate_report(
     breakpoints: list[Breakpoint],
     reads_df: pd.DataFrame,
@@ -28,7 +35,6 @@ def generate_report(
     if breakpoints:
         summary_rows = []
         for i, bp in enumerate(breakpoints):
-            specificity_str = f"{bp.acro_specificity:.3f}" if bp.acro_specificity is not None else "NA"
             summary_rows.append({
                 "sample": sample,
                 "cluster": f"cluster_{i}",
@@ -36,8 +42,11 @@ def generate_report(
                 "breakpoint": f"{bp.chrom}:{bp.position}",
                 "span": f"{bp.pos_min}-{bp.pos_max}",
                 "supporting_reads": bp.supporting_reads,
-                "confidence": f"{bp.confidence:.3f}",
-                "acro_specificity": specificity_str,
+                "confidence": _fmt(bp.confidence),
+                "acro_specificity": _fmt(bp.acro_specificity),
+                "mate_concordance": _fmt(bp.mate_concordance),
+                "dominant_saac_chrom": bp.dominant_saac_chrom or "NA",
+                "ring_score": _fmt(bp.ring_score),
             })
         df_summary = pd.DataFrame(summary_rows)
         df_summary.to_csv(summary_path, sep="\t", index=False)
@@ -54,10 +63,16 @@ def generate_report(
 
     # Print summary to stdout
     if breakpoints:
-        header = "sample\tcluster\tbreakpoint\tsupporting_reads\tconfidence\tacro_specificity"
+        header = (
+            "sample\tcluster\tbreakpoint\tsupporting_reads\tconfidence"
+            "\tacro_specificity\tmate_concordance\tring_score"
+        )
         print(header)
         for i, bp in enumerate(breakpoints):
-            specificity_str = f"{bp.acro_specificity:.3f}" if bp.acro_specificity is not None else "NA"
-            print(f"{sample}\tcluster_{i}\t{bp.chrom}:{bp.position}\t{bp.supporting_reads}\t{bp.confidence:.3f}\t{specificity_str}")
+            print(
+                f"{sample}\tcluster_{i}\t{bp.chrom}:{bp.position}\t{bp.supporting_reads}"
+                f"\t{_fmt(bp.confidence)}\t{_fmt(bp.acro_specificity)}"
+                f"\t{_fmt(bp.mate_concordance)}\t{_fmt(bp.ring_score)}"
+            )
     else:
         print("no ring detected.")

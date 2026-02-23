@@ -29,3 +29,6 @@ class Breakpoint:
     supporting_reads: int
     confidence: float
     acro_specificity: float | None
+    mate_concordance: float | None = None
+    dominant_saac_chrom: str | None = None
+    ring_score: float | None = None

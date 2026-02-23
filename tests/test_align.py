@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from gollumpy.align import align_mates, build_aligner, compute_acro_specificity
+from gollumpy.align import align_mates, build_aligner, compute_acro_specificity, compute_mate_concordance
 from gollumpy.config import GollumConfig
 
 
@@ -90,6 +90,8 @@ class TestAlignMates:
         assert len(result) == 1
         assert result.iloc[0]["read_id"] == "read1"
         assert "best_mlen" in result.columns
+        assert "best_align_chrom" in result.columns
+        assert result.iloc[0]["best_align_chrom"] == "chr22"
 
     @patch("gollumpy.align.mappy.Aligner")
     def test_non_saac_hit_filtered(self, mock_aligner_class: MagicMock, tmp_path: Path) -> None:
@@ -275,3 +277,51 @@ class TestBuildAligner:
 
         with pytest.raises(RuntimeError, match="Failed to build minimap2 index"):
             build_aligner(config)
+
+
+class TestComputeMateConcordance:
+    def test_empty_input(self) -> None:
+        concordance, dominant = compute_mate_concordance(pd.DataFrame())
+        assert concordance == 0.0
+        assert dominant == ""
+
+    def test_missing_column(self) -> None:
+        df = pd.DataFrame({"read_id": ["r1"]})
+        concordance, dominant = compute_mate_concordance(df)
+        assert concordance == 0.0
+        assert dominant == ""
+
+    def test_perfect_concordance(self) -> None:
+        df = pd.DataFrame({
+            "read_id": ["r1", "r2", "r3", "r4", "r5"],
+            "best_align_chrom": ["chr22", "chr22", "chr22", "chr22", "chr22"],
+        })
+        concordance, dominant = compute_mate_concordance(df)
+        assert concordance == 1.0
+        assert dominant == "chr22"
+
+    def test_mixed_concordance(self) -> None:
+        df = pd.DataFrame({
+            "read_id": ["r1", "r2", "r3", "r4", "r5"],
+            "best_align_chrom": ["chr22", "chr22", "chr22", "chr14", "chr15"],
+        })
+        concordance, dominant = compute_mate_concordance(df)
+        assert concordance == pytest.approx(0.6)
+        assert dominant == "chr22"
+
+    def test_scattered_noise(self) -> None:
+        df = pd.DataFrame({
+            "read_id": ["r1", "r2", "r3", "r4"],
+            "best_align_chrom": ["chr22", "chr14", "chr15", "chr13"],
+        })
+        concordance, dominant = compute_mate_concordance(df)
+        assert concordance == pytest.approx(0.25)
+
+    def test_single_read(self) -> None:
+        df = pd.DataFrame({
+            "read_id": ["r1"],
+            "best_align_chrom": ["chr22"],
+        })
+        concordance, dominant = compute_mate_concordance(df)
+        assert concordance == 1.0
+        assert dominant == "chr22"
