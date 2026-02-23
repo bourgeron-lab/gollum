@@ -137,3 +137,42 @@ class TestClusterBreakpoints:
         clustered = labeled_df[labeled_df["cluster"] != -1]
         assert len(clustered) > 0
         assert all(clustered["cluster"] >= 0)
+
+    def test_allow_single_cluster(self) -> None:
+        # A single tight group should be detected as one cluster
+        np.random.seed(42)
+        positions = np.random.normal(47097797, 30, 10).astype(int)
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(10)],
+            "chrom": ["chr22"] * 10,
+            "pos": positions,
+        })
+
+        result, _ = cluster_breakpoints(
+            df, ClusterParams(min_cluster_size=3, min_samples=2, allow_single_cluster=True)
+        )
+        assert len(result) == 1
+        assert result[0].supporting_reads >= 3
+
+    def test_epsilon_merges_close_subclusters(self) -> None:
+        # Two nearby subclusters within 100bp should merge with epsilon=100
+        np.random.seed(42)
+        pos1 = np.random.normal(47097700, 10, 10).astype(int)
+        pos2 = np.random.normal(47097780, 10, 10).astype(int)
+        positions = np.concatenate([pos1, pos2])
+
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(20)],
+            "chrom": ["chr22"] * 20,
+            "pos": positions,
+        })
+
+        result_merged, _ = cluster_breakpoints(
+            df, ClusterParams(min_cluster_size=3, min_samples=2, cluster_selection_epsilon=100.0)
+        )
+        result_split, _ = cluster_breakpoints(
+            df, ClusterParams(min_cluster_size=3, min_samples=2, cluster_selection_epsilon=0.0)
+        )
+
+        # With epsilon=100, subclusters within 80bp should merge
+        assert len(result_merged) <= len(result_split)

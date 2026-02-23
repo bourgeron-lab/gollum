@@ -37,6 +37,8 @@ class ClusterParams:
 
     min_cluster_size: int = 3
     min_samples: int = 2
+    cluster_selection_epsilon: float = 100.0
+    allow_single_cluster: bool = True
 
 
 @dataclass

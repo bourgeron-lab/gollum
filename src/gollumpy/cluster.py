@@ -43,6 +43,8 @@ def cluster_breakpoints(
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=cluster_params.min_cluster_size,
         min_samples=cluster_params.min_samples,
+        cluster_selection_epsilon=cluster_params.cluster_selection_epsilon,
+        allow_single_cluster=cluster_params.allow_single_cluster,
     )
     labels = clusterer.fit_predict(positions)
     probabilities = clusterer.probabilities_

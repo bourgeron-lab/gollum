@@ -24,6 +24,8 @@ class TestCLI:
         assert result.exit_code == 0
         assert "--fasta" in result.output
         assert "--chr" in result.output
+        assert "--cluster-epsilon" in result.output
+        assert "--allow-single" in result.output
 
     def test_grch38_help(self, mock_pipeline) -> None:  # noqa: ANN001
         runner = CliRunner()
@@ -53,6 +55,8 @@ class TestCLI:
         assert config.mode == "t2t"
         assert config.target_chrom == "chr22"
         assert config.sample_name == "sample"
+        assert config.cluster_params.cluster_selection_epsilon == 100.0
+        assert config.cluster_params.allow_single_cluster is True
 
     def test_t2t_custom_options(self, mock_pipeline, tmp_path: Path) -> None:  # noqa: ANN001
         fasta = tmp_path / "ref.fa"

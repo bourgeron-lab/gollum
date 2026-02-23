@@ -31,6 +31,8 @@ def shared_options(func):  # noqa: ANN001, ANN201
     @click.option("--max-divergence", default=0.05, type=float, help="Maximum sequence divergence (NM/blen)")
     @click.option("--min-cluster-size", default=3, type=int, help="HDBSCAN min_cluster_size")
     @click.option("--min-samples", default=2, type=int, help="HDBSCAN min_samples")
+    @click.option("--cluster-epsilon", default=100.0, type=float, help="HDBSCAN cluster_selection_epsilon (bp)")
+    @click.option("--allow-single/--no-allow-single", default=True, help="Allow single-cluster detection")
     @functools.wraps(func)
     def wrapper(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
         return func(*args, **kwargs)
@@ -50,6 +52,8 @@ def _build_config(
     max_divergence: float,
     min_cluster_size: int,
     min_samples: int,
+    cluster_epsilon: float,
+    allow_single: bool,
     fasta_grch38: Path | None = None,
 ) -> GollumConfig:
     """Build GollumConfig from CLI arguments."""
@@ -72,6 +76,8 @@ def _build_config(
         cluster_params=ClusterParams(
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
+            cluster_selection_epsilon=cluster_epsilon,
+            allow_single_cluster=allow_single,
         ),
     )
 
@@ -95,6 +101,8 @@ def t2t(
     max_divergence: float,
     min_cluster_size: int,
     min_samples: int,
+    cluster_epsilon: float,
+    allow_single: bool,
 ) -> None:
     """Detect ring chromosomes from T2T-CHM13 aligned BAM/CRAM."""
     config = _build_config(
@@ -109,6 +117,8 @@ def t2t(
         max_divergence=max_divergence,
         min_cluster_size=min_cluster_size,
         min_samples=min_samples,
+        cluster_epsilon=cluster_epsilon,
+        allow_single=allow_single,
     )
     run_pipeline(config)
 
@@ -130,6 +140,8 @@ def grch38(
     max_divergence: float,
     min_cluster_size: int,
     min_samples: int,
+    cluster_epsilon: float,
+    allow_single: bool,
     reference: Path,
 ) -> None:
     """Detect ring chromosomes from GRCh38-aligned BAM/CRAM.
@@ -149,6 +161,8 @@ def grch38(
         max_divergence=max_divergence,
         min_cluster_size=min_cluster_size,
         min_samples=min_samples,
+        cluster_epsilon=cluster_epsilon,
+        allow_single=allow_single,
         fasta_grch38=reference,
     )
     run_pipeline(config)
