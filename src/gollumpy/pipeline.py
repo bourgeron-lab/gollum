@@ -27,16 +27,19 @@ def compute_ring_score(
     confidence: float,
     acro_specificity: float | None,
     mate_concordance: float,
+    span: int = 0,
 ) -> float:
     """Compute composite ring score for a breakpoint (0–10).
 
     Higher values indicate a more likely real ring chromosome breakpoint.
 
     Components (each normalized to ~0–1):
-      - mate_concordance (weight 0.30): strongest discriminator
-      - read_signal (weight 0.25): log2(supporting_reads) / 10, capped at 1.0
-      - confidence (weight 0.25): HDBSCAN mean probability (already 0–1)
-      - specificity (weight 0.20): min(acro_specificity, 20) / 20, capped at 1.0
+      - mate_concordance (weight 0.25): fraction of mates converging on one SAAC chrom
+      - read_signal (weight 0.20): log2(supporting_reads) / 10, capped at 1.0
+      - confidence (weight 0.20): HDBSCAN mean probability (already 0–1)
+      - specificity (weight 0.15): min(acro_specificity, 20) / 20, capped at 1.0
+      - span_tightness (weight 0.20): penalizes wide clusters via log10 scale
+        (~1.0 at 1bp, ~0.57 at 1kb, ~0.14 at 1Mb, 0.0 at ≥10Mb)
     """
     read_signal = min(math.log2(max(supporting_reads, 1)) / 10.0, 1.0)
 
@@ -47,11 +50,14 @@ def compute_ring_score(
     else:
         spec_value = min(acro_specificity, 20.0) / 20.0
 
+    span_tightness = max(1.0 - math.log10(max(span, 1)) / 7.0, 0.0)
+
     score = (
-        0.30 * mate_concordance
-        + 0.25 * read_signal
-        + 0.25 * confidence
-        + 0.20 * spec_value
+        0.25 * mate_concordance
+        + 0.20 * read_signal
+        + 0.20 * confidence
+        + 0.15 * spec_value
+        + 0.20 * span_tightness
     ) * 10.0
 
     return round(score, 3)
@@ -104,10 +110,10 @@ def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
         generate_report([], aligned, config)
         return []
 
-    # Step 3b: Target-chrom PHR filter — keep only reads whose best SAAC hit
-    # is on the target chromosome's short arm (replicates v1's isPHR filter)
+    # Step 3b: Target-chrom PHR filter — keep only reads with ANY SAAC hit
+    # on the target chromosome (v1's isPHR semantics: any hit, not just best)
     before_phr = len(aligned)
-    aligned = aligned[aligned["best_align_chrom"] == config.target_chrom]
+    aligned = aligned[aligned["has_target_saac_hit"]]
     logger.info("After target-chrom filter: %d/%d reads", len(aligned), before_phr)
 
     if aligned.empty:
@@ -161,6 +167,7 @@ def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
                     bp.confidence,
                     bp.acro_specificity,
                     bp.mate_concordance or 0.0,
+                    span=bp.pos_max - bp.pos_min,
                 )
 
             # Sort by ring_score descending (best candidate first)

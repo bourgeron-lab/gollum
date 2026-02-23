@@ -91,7 +91,66 @@ class TestAlignMates:
         assert result.iloc[0]["read_id"] == "read1"
         assert "best_mlen" in result.columns
         assert "best_align_chrom" in result.columns
+        assert "has_target_saac_hit" in result.columns
         assert result.iloc[0]["best_align_chrom"] == "chr22"
+        assert bool(result.iloc[0]["has_target_saac_hit"]) is True
+
+    @patch("gollumpy.align.mappy.Aligner")
+    def test_non_target_saac_hit_still_in_output(self, mock_aligner_class: MagicMock, tmp_path: Path) -> None:
+        """A read with SAAC hit on non-target chrom is kept but has_target_saac_hit=False."""
+        config = _make_config(tmp_path)  # target_chrom = chr22
+
+        # Hit in chr14 SAAC region (not the target chr22)
+        chr14_hit = _mock_hit(ctg="chr14", r_st=5000000, r_en=5000150, mlen=148, NM=2, blen=150)
+
+        mock_aligner = MagicMock()
+        mock_aligner.__bool__ = MagicMock(return_value=True)
+        mock_aligner.map.return_value = [chr14_hit]
+        mock_aligner_class.return_value = mock_aligner
+
+        reads_df = pd.DataFrame([{
+            "read_id": "read1",
+            "chrom": "chr22",
+            "pos": 47097797,
+            "mapq": 60,
+            "mate_chrom": "chr14",
+            "mate_pos": 5000000,
+            "mate_sequence": "ACGTACGTACGT",
+        }])
+
+        result = align_mates(reads_df, config)
+        assert len(result) == 1
+        assert result.iloc[0]["best_align_chrom"] == "chr14"
+        assert bool(result.iloc[0]["has_target_saac_hit"]) is False
+
+    @patch("gollumpy.align.mappy.Aligner")
+    def test_multi_hit_with_any_target_saac(self, mock_aligner_class: MagicMock, tmp_path: Path) -> None:
+        """A read with best hit on chr14 but also a hit on chr22 SAAC gets has_target_saac_hit=True."""
+        config = _make_config(tmp_path)  # target_chrom = chr22
+
+        # Best hit on chr14 (higher mlen), secondary hit on chr22
+        chr14_hit = _mock_hit(ctg="chr14", r_st=5000000, r_en=5000150, mlen=148, NM=2, blen=150)
+        chr22_hit = _mock_hit(ctg="chr22", r_st=5000000, r_en=5000140, mlen=138, NM=3, blen=140)
+
+        mock_aligner = MagicMock()
+        mock_aligner.__bool__ = MagicMock(return_value=True)
+        mock_aligner.map.return_value = [chr14_hit, chr22_hit]
+        mock_aligner_class.return_value = mock_aligner
+
+        reads_df = pd.DataFrame([{
+            "read_id": "read1",
+            "chrom": "chr22",
+            "pos": 47097797,
+            "mapq": 60,
+            "mate_chrom": "chr14",
+            "mate_pos": 5000000,
+            "mate_sequence": "ACGTACGTACGT",
+        }])
+
+        result = align_mates(reads_df, config)
+        assert len(result) == 1
+        assert result.iloc[0]["best_align_chrom"] == "chr14"  # best hit is on chr14
+        assert bool(result.iloc[0]["has_target_saac_hit"]) is True  # but has ANY hit on chr22
 
     @patch("gollumpy.align.mappy.Aligner")
     def test_non_saac_hit_filtered(self, mock_aligner_class: MagicMock, tmp_path: Path) -> None:

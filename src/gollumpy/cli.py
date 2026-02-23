@@ -27,10 +27,10 @@ def shared_options(func):  # noqa: ANN001, ANN201
     @click.option(
         "--blacklist-bed", default=None, type=click.Path(exists=True, path_type=Path), help="Blacklisted regions BED"
     )
-    @click.option("--min-alignment-score", default=100, type=int, help="Minimum alignment matching length (mlen)")
-    @click.option("--max-divergence", default=0.05, type=float, help="Maximum sequence divergence (NM/blen)")
+    @click.option("--min-alignment-score", default=80, type=int, help="Minimum alignment matching length (mlen)")
+    @click.option("--max-divergence", default=0.06, type=float, help="Maximum sequence divergence (NM/blen)")
     @click.option("--min-cluster-size", default=3, type=int, help="HDBSCAN min_cluster_size")
-    @click.option("--min-samples", default=2, type=int, help="HDBSCAN min_samples")
+    @click.option("--min-samples", default=5, type=int, help="HDBSCAN min_samples")
     @click.option("--cluster-epsilon", default=100.0, type=float, help="HDBSCAN cluster_selection_epsilon (bp)")
     @click.option("--allow-single/--no-allow-single", default=True, help="Allow single-cluster detection")
     @click.option("--min-supporting-reads", default=5, type=int, help="Minimum reads per cluster to report")

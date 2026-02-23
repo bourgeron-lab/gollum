@@ -91,6 +91,12 @@ def align_mates(reads_df: pd.DataFrame, config: GollumConfig) -> pd.DataFrame:
     saac_hits = df_align[df_align["is_saac"]]
     logger.info("Alignments in SAAC regions: %d", len(saac_hits))
 
+    # Identify reads with at least one SAAC hit on the target chromosome
+    # (v1's isPHR semantics: ANY hit on target, not just the best hit)
+    target_saac_reads = set(
+        saac_hits[saac_hits["align_chrom"] == config.target_chrom]["read_id"]
+    )
+
     if saac_hits.empty:
         logger.info("No alignments mapped to SAAC regions")
         return pd.DataFrame()
@@ -120,6 +126,9 @@ def align_mates(reads_df: pd.DataFrame, config: GollumConfig) -> pd.DataFrame:
         best_hit_per_read[["read_id", "align_chrom"]].rename(columns={"align_chrom": "best_align_chrom"}),
         on="read_id",
     )
+
+    # Mark reads that have ANY SAAC hit on the target chromosome
+    saac_stats["has_target_saac_hit"] = saac_stats["read_id"].isin(target_saac_reads)
 
     # Filter original reads to those with SAAC hits and merge stats
     result = reads_df[reads_df["read_id"].isin(reads_with_saac)].merge(saac_stats, on="read_id")

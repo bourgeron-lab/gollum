@@ -132,14 +132,14 @@ class TestRunPipeline:
     @patch("gollumpy.pipeline.align_mates")
     @patch("gollumpy.pipeline.extract_mate_sequences")
     @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
-    def test_phr_filter_removes_non_target_chrom(
+    def test_phr_filter_removes_reads_without_target_saac_hit(
         self,
         mock_extract: MagicMock,
         mock_mate_seq: MagicMock,
         mock_align: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Reads whose best SAAC hit is NOT on the target chrom are filtered out."""
+        """Reads with no SAAC hit on the target chrom are filtered out."""
         config = _make_config(tmp_path)  # target_chrom = chr22
 
         reads_df = pd.DataFrame([
@@ -150,13 +150,14 @@ class TestRunPipeline:
         mock_extract.return_value = reads_df
         mock_mate_seq.return_value = reads_df.assign(mate_sequence="ACGT" * 30)
 
-        # All reads align to non-target SAAC chroms (chr15, chr13)
+        # All reads have SAAC hits on chr15 only, not the target (chr22)
         aligned_df = reads_df.assign(
             mate_sequence="ACGT" * 30,
             best_mlen=148,
             best_divergence=0.01,
             n_saac_hits=1,
-            best_align_chrom="chr15",  # NOT the target (chr22)
+            best_align_chrom="chr15",
+            has_target_saac_hit=False,  # no hit on target chrom
         )
         mock_align.return_value = aligned_df
 
@@ -206,6 +207,7 @@ class TestRunPipeline:
             best_divergence=0.01,
             n_saac_hits=1,
             best_align_chrom="chr22",
+            has_target_saac_hit=True,
         )
         mock_align.return_value = aligned_df
 
@@ -277,6 +279,7 @@ class TestRunPipeline:
             best_divergence=0.01,
             n_saac_hits=1,
             best_align_chrom="chr22",
+            has_target_saac_hit=True,
         )
         mock_cluster.return_value = ([], pd.DataFrame())
 
@@ -329,6 +332,7 @@ class TestRunPipeline:
             best_divergence=0.01,
             n_saac_hits=1,
             best_align_chrom="chr22",
+            has_target_saac_hit=True,
         )
         mock_align.return_value = aligned_df
 
@@ -362,23 +366,25 @@ class TestRunPipeline:
 
 class TestComputeRingScore:
     def test_perfect_signal(self) -> None:
-        """High reads, confidence, specificity, and concordance → high score."""
+        """High reads, confidence, specificity, concordance, tight span → high score."""
         score = compute_ring_score(
             supporting_reads=100,
             confidence=1.0,
             acro_specificity=float("inf"),
             mate_concordance=1.0,
+            span=200,  # tight cluster
         )
         assert score > 8.0
         assert score <= 10.0
 
     def test_noise_signal(self) -> None:
-        """Low reads, confidence, specificity, and concordance → low score."""
+        """Low reads, confidence, specificity, concordance, wide span → low score."""
         score = compute_ring_score(
             supporting_reads=3,
             confidence=0.3,
             acro_specificity=1.5,
             mate_concordance=0.3,
+            span=5_000_000,  # wide cluster
         )
         assert score < 3.0
 
@@ -389,6 +395,7 @@ class TestComputeRingScore:
             confidence=0.8,
             acro_specificity=None,
             mate_concordance=0.9,
+            span=500,
         )
         assert score > 0
         # Compare with non-None specificity (should be lower)
@@ -397,6 +404,7 @@ class TestComputeRingScore:
             confidence=0.8,
             acro_specificity=10.0,
             mate_concordance=0.9,
+            span=500,
         )
         assert score < score_with_spec
 
@@ -407,12 +415,14 @@ class TestComputeRingScore:
             confidence=0.8,
             acro_specificity=float("inf"),
             mate_concordance=0.9,
+            span=500,
         )
         score_high = compute_ring_score(
             supporting_reads=10,
             confidence=0.8,
             acro_specificity=20.0,
             mate_concordance=0.9,
+            span=500,
         )
         # inf and 20.0 should both cap at 1.0
         assert score_inf == pytest.approx(score_high)
@@ -424,17 +434,32 @@ class TestComputeRingScore:
             confidence=0.0,
             acro_specificity=None,
             mate_concordance=0.0,
+            span=0,
         )
         assert score >= 0.0
         assert score <= 10.0
 
-    def test_concordance_has_highest_weight(self) -> None:
-        """Mate concordance has weight 0.30, the highest single component."""
+    def test_span_penalty(self) -> None:
+        """Wide span should produce a lower score than tight span."""
+        tight = compute_ring_score(
+            supporting_reads=10, confidence=0.8, acro_specificity=10.0,
+            mate_concordance=0.9, span=200,
+        )
+        wide = compute_ring_score(
+            supporting_reads=10, confidence=0.8, acro_specificity=10.0,
+            mate_concordance=0.9, span=5_000_000,
+        )
+        assert tight > wide
+
+    def test_concordance_and_span_tied_highest_weight(self) -> None:
+        """Mate concordance (0.25) and span_tightness (0.20) are top-weighted components."""
         base = compute_ring_score(
-            supporting_reads=10, confidence=0.5, acro_specificity=5.0, mate_concordance=0.0,
+            supporting_reads=10, confidence=0.5, acro_specificity=5.0,
+            mate_concordance=0.0, span=500,
         )
         with_concordance = compute_ring_score(
-            supporting_reads=10, confidence=0.5, acro_specificity=5.0, mate_concordance=1.0,
+            supporting_reads=10, confidence=0.5, acro_specificity=5.0,
+            mate_concordance=1.0, span=500,
         )
-        # Concordance adds 0.30 * 1.0 * 10 = 3.0 points
-        assert with_concordance - base == pytest.approx(3.0)
+        # Concordance adds 0.25 * 1.0 * 10 = 2.5 points
+        assert with_concordance - base == pytest.approx(2.5)

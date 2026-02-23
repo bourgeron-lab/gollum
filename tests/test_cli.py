@@ -56,6 +56,9 @@ class TestCLI:
         assert config.mode == "t2t"
         assert config.target_chrom == "chr22"
         assert config.sample_name == "sample"
+        assert config.filter_params.min_alignment_score == 80
+        assert config.filter_params.max_divergence == 0.06
+        assert config.cluster_params.min_samples == 5
         assert config.cluster_params.cluster_selection_epsilon == 100.0
         assert config.cluster_params.allow_single_cluster is True
         assert config.cluster_params.min_supporting_reads == 5
