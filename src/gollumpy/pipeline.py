@@ -28,6 +28,9 @@ def compute_ring_score(
     acro_specificity: float | None,
     mate_concordance: float,
     span: int = 0,
+    *,
+    dominant_saac_chrom: str = "",
+    target_chrom: str = "",
 ) -> float:
     """Compute composite ring score for a breakpoint (0–10).
 
@@ -45,7 +48,17 @@ def compute_ring_score(
     separate real clusters (10–20 reads) from noise clusters (3–5 reads).
     Confidence weight reduced from 0.20 to 0.10 since HDBSCAN confidence
     favours small tight clusters regardless of biological significance.
+
+    Target concordance: when mates converge on a foreign SAAC chromosome
+    (e.g. chr14 instead of target chr22), concordance is penalised 70%.
+    Ring breakpoints produce mates mapping to the target chromosome's own
+    SAAC; non-target concordance indicates inter-chromosomal structural
+    variants, not rings.
     """
+    # Penalize concordance when mates converge on a foreign SAAC chromosome
+    if dominant_saac_chrom and target_chrom and dominant_saac_chrom != target_chrom:
+        mate_concordance *= 0.3
+
     read_signal = min(supporting_reads / 15.0, 1.0)
 
     if acro_specificity is None:
@@ -184,6 +197,8 @@ def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
                     bp.acro_specificity,
                     bp.mate_concordance or 0.0,
                     span=bp.pos_max - bp.pos_min,
+                    dominant_saac_chrom=bp.dominant_saac_chrom or "",
+                    target_chrom=config.target_chrom,
                 )
 
             # Sort by ring_score descending (best candidate first)

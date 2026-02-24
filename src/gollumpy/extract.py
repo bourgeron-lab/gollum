@@ -81,6 +81,8 @@ def extract_discordant_reads_t2t(config: GollumConfig) -> pd.DataFrame:
                 "read_id": read.query_name,
                 "chrom": read.reference_name,
                 "pos": read.reference_start,
+                "cigarstring": read.cigarstring,
+                "reference_end": read.reference_end,
                 "mapq": read.mapping_quality,
                 "mate_chrom": mate_chrom,
                 "mate_pos": mate_pos,
@@ -89,7 +91,9 @@ def extract_discordant_reads_t2t(config: GollumConfig) -> pd.DataFrame:
     logger.info("Discordant reads extracted: %d", len(reads))
 
     if not reads:
-        return pd.DataFrame(columns=["read_id", "chrom", "pos", "mapq", "mate_chrom", "mate_pos"])
+        return pd.DataFrame(
+            columns=["read_id", "chrom", "pos", "cigarstring", "reference_end", "mapq", "mate_chrom", "mate_pos"],
+        )
 
     return pd.DataFrame(reads)
 
@@ -203,6 +207,8 @@ def extract_discordant_reads_grch38(config: GollumConfig) -> pd.DataFrame:
                 "read_id": read.query_name,
                 "chrom": read.reference_name,
                 "pos": read.reference_start,
+                "cigarstring": read.cigarstring,
+                "reference_end": read.reference_end,
                 "mapq": read.mapping_quality,
                 "mate_chrom": mate_chrom if mate_chrom is not None else "*",
                 "mate_pos": read.next_reference_start if not read.mate_is_unmapped else 0,
@@ -211,6 +217,8 @@ def extract_discordant_reads_grch38(config: GollumConfig) -> pd.DataFrame:
     logger.info("GRCh38 discordant reads extracted: %d", len(reads))
 
     if not reads:
-        return pd.DataFrame(columns=["read_id", "chrom", "pos", "mapq", "mate_chrom", "mate_pos"])
+        return pd.DataFrame(
+            columns=["read_id", "chrom", "pos", "cigarstring", "reference_end", "mapq", "mate_chrom", "mate_pos"],
+        )
 
     return pd.DataFrame(reads)

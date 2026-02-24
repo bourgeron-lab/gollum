@@ -538,3 +538,44 @@ class TestComputeRingScore:
         )
         # Real cluster should still outscore noise despite lower confidence
         assert real > noise
+
+    def test_non_target_concordance_penalized(self) -> None:
+        """Concordance penalised 70% when dominant SAAC chrom != target chrom."""
+        base = compute_ring_score(
+            supporting_reads=15, confidence=0.8, acro_specificity=15.0,
+            mate_concordance=0.5, span=500_000,
+        )
+        penalized = compute_ring_score(
+            supporting_reads=15, confidence=0.8, acro_specificity=15.0,
+            mate_concordance=0.5, span=500_000,
+            dominant_saac_chrom="chr14", target_chrom="chr22",
+        )
+        # Penalty reduces concordance from 0.5 to 0.15 → drops score by 0.25*(0.5-0.15)*10 = 0.875
+        assert base - penalized == pytest.approx(0.875)
+        assert penalized < base
+
+    def test_target_concordance_unpenalized(self) -> None:
+        """No penalty when dominant SAAC chrom matches target chrom."""
+        base = compute_ring_score(
+            supporting_reads=15, confidence=0.8, acro_specificity=15.0,
+            mate_concordance=0.5, span=500_000,
+        )
+        same_target = compute_ring_score(
+            supporting_reads=15, confidence=0.8, acro_specificity=15.0,
+            mate_concordance=0.5, span=500_000,
+            dominant_saac_chrom="chr22", target_chrom="chr22",
+        )
+        assert base == pytest.approx(same_target)
+
+    def test_target_concordance_empty_strings_no_penalty(self) -> None:
+        """Empty dominant/target strings (backward compat) apply no penalty."""
+        base = compute_ring_score(
+            supporting_reads=15, confidence=0.8, acro_specificity=15.0,
+            mate_concordance=0.5, span=500_000,
+        )
+        with_empty = compute_ring_score(
+            supporting_reads=15, confidence=0.8, acro_specificity=15.0,
+            mate_concordance=0.5, span=500_000,
+            dominant_saac_chrom="", target_chrom="",
+        )
+        assert base == pytest.approx(with_empty)

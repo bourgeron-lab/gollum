@@ -34,6 +34,8 @@ def _mock_read(
     query_name: str = "read1",
     reference_name: str = "chr22",
     reference_start: int = 47000000,
+    reference_end: int | None = None,
+    cigarstring: str = "150M",
     mapping_quality: int = 60,
     is_proper_pair: bool = False,
     is_unmapped: bool = False,
@@ -47,6 +49,8 @@ def _mock_read(
     read.query_name = query_name
     read.reference_name = reference_name
     read.reference_start = reference_start
+    read.reference_end = reference_end if reference_end is not None else reference_start + 150
+    read.cigarstring = cigarstring
     read.mapping_quality = mapping_quality
     read.is_proper_pair = is_proper_pair
     read.is_unmapped = is_unmapped
@@ -81,6 +85,8 @@ class TestExtractDiscordantReadsT2T:
         assert len(df) == 1
         assert df.iloc[0]["read_id"] == "good_read"
         assert df.iloc[0]["pos"] == 47097797
+        assert df.iloc[0]["cigarstring"] == "150M"
+        assert df.iloc[0]["reference_end"] == 47097797 + 150
 
     @patch("gollumpy.extract.pysam.AlignmentFile")
     def test_filters_proper_pairs(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
@@ -214,7 +220,11 @@ class TestExtractDiscordantReadsT2T:
 
         df = extract_discordant_reads_t2t(config)
         assert df.empty
-        assert list(df.columns) == ["read_id", "chrom", "pos", "mapq", "mate_chrom", "mate_pos"]
+        expected_cols = [
+            "read_id", "chrom", "pos", "cigarstring", "reference_end",
+            "mapq", "mate_chrom", "mate_pos",
+        ]
+        assert list(df.columns) == expected_cols
 
 
 class TestExtractMateSequences:

@@ -5,7 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from gollumpy.cluster import cluster_breakpoints, pre_cluster_reads
+from gollumpy.cluster import (
+    _parse_clip_position,
+    _refine_breakpoint_position,
+    _trim_cluster_outliers,
+    cluster_breakpoints,
+    pre_cluster_reads,
+)
 from gollumpy.config import ClusterParams
 
 
@@ -254,3 +260,158 @@ class TestClusterEpsilon:
 
         # With epsilon=100, subclusters within 80bp should merge
         assert len(result_merged) <= len(result_split)
+
+
+class TestTrimClusterOutliers:
+    def test_removes_outliers(self) -> None:
+        """14 tight reads + 5 outliers → outliers trimmed to noise."""
+        # Mimics C0011CP cluster_0: tight core + distant stragglers
+        tight = list(range(47_382_600, 47_382_600 + 14 * 25, 25))
+        outliers = [46_179_722, 46_907_935, 47_234_058, 47_884_930, 48_019_339]
+        positions = tight + outliers
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(19)],
+            "chrom": ["chr22"] * 19,
+            "pos": positions,
+            "cluster": [0] * 19,
+            "probability": [0.9] * 19,
+        })
+
+        result = _trim_cluster_outliers(df)
+        clustered = result[result["cluster"] != -1]
+        assert len(clustered) == 14
+        # All remaining reads should be in the tight core
+        assert clustered["pos"].min() >= 47_000_000
+
+    def test_skips_small_clusters(self) -> None:
+        """Clusters with < 5 reads should not be trimmed."""
+        df = pd.DataFrame({
+            "read_id": ["r0", "r1", "r2", "r3"],
+            "chrom": ["chr22"] * 4,
+            "pos": [1000, 1100, 1200, 50_000_000],  # r3 is an outlier
+            "cluster": [0, 0, 0, 0],
+            "probability": [0.9] * 4,
+        })
+
+        result = _trim_cluster_outliers(df)
+        clustered = result[result["cluster"] != -1]
+        assert len(clustered) == 4  # all kept (< 5 reads)
+
+    def test_zero_iqr_not_trimmed(self) -> None:
+        """Cluster with all identical positions should not be trimmed."""
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(6)],
+            "chrom": ["chr22"] * 6,
+            "pos": [47_000_000] * 6,
+            "cluster": [0] * 6,
+            "probability": [0.9] * 6,
+        })
+
+        result = _trim_cluster_outliers(df)
+        clustered = result[result["cluster"] != -1]
+        assert len(clustered) == 6  # all kept
+
+    def test_preserves_noise_label(self) -> None:
+        """Reads already labeled as noise (-1) should stay as noise."""
+        df = pd.DataFrame({
+            "read_id": ["r0", "r1", "r2"],
+            "chrom": ["chr22"] * 3,
+            "pos": [1000, 2000, 99_000_000],
+            "cluster": [-1, 0, 0],
+            "probability": [0.0, 0.9, 0.9],
+        })
+
+        result = _trim_cluster_outliers(df)
+        assert result.iloc[0]["cluster"] == -1  # stays noise
+
+
+class TestParseClipPosition:
+    def test_right_side_clip(self) -> None:
+        pos = _parse_clip_position("100M50S", ref_start=1000, ref_end=1100)
+        assert pos == 1100
+
+    def test_left_side_clip(self) -> None:
+        pos = _parse_clip_position("50S100M", ref_start=1000, ref_end=1100)
+        assert pos == 1000
+
+    def test_no_significant_clip(self) -> None:
+        pos = _parse_clip_position("150M", ref_start=1000, ref_end=1150)
+        assert pos is None
+
+    def test_small_clip_ignored(self) -> None:
+        pos = _parse_clip_position("140M10S", ref_start=1000, ref_end=1140)
+        assert pos is None  # 10bp < min_clip=20
+
+    def test_custom_min_clip(self) -> None:
+        pos = _parse_clip_position("140M10S", ref_start=1000, ref_end=1140, min_clip=5)
+        assert pos == 1140
+
+    def test_empty_cigar(self) -> None:
+        assert _parse_clip_position("", ref_start=0, ref_end=0) is None
+        assert _parse_clip_position(None, ref_start=0, ref_end=0) is None  # type: ignore[arg-type]
+
+    def test_complex_cigar_with_right_clip(self) -> None:
+        """CIGAR with insertions/deletions before soft-clip."""
+        pos = _parse_clip_position("80M2I50M20S", ref_start=1000, ref_end=1130)
+        assert pos == 1130
+
+
+class TestRefineBreakpointPosition:
+    def test_softclip_consensus(self) -> None:
+        """5 reads with right-side clips at similar positions → clip median."""
+        df = pd.DataFrame({
+            "pos": [47_382_500, 47_382_510, 47_382_520, 47_382_530, 47_382_540],
+            "cigarstring": ["100M50S", "100M50S", "100M50S", "100M50S", "100M50S"],
+            "reference_end": [47_382_600, 47_382_610, 47_382_620, 47_382_630, 47_382_640],
+        })
+
+        pos = _refine_breakpoint_position(df)
+        # Should use clip positions (reference_end): 600, 610, 620, 630, 640
+        # Median of clip positions = 47382620
+        assert pos == 47_382_620
+
+    def test_softclip_disagreement_falls_back_to_median(self) -> None:
+        """Clips with wide IQR (> 50bp) → fall back to median of all positions."""
+        df = pd.DataFrame({
+            "pos": [47_382_500, 47_382_510, 47_382_520, 47_382_530, 47_382_540],
+            "cigarstring": ["100M50S", "100M50S", "100M50S", "100M50S", "100M50S"],
+            # Clip positions spread over 200bp — disagree
+            "reference_end": [47_382_500, 47_382_550, 47_382_600, 47_382_650, 47_382_700],
+        })
+
+        pos = _refine_breakpoint_position(df)
+        # IQR of clips: 75bp > 50bp → fallback to median of pos
+        assert pos == 47_382_520  # median of positions
+
+    def test_no_cigar_columns_uses_median(self) -> None:
+        """DataFrame without cigarstring column → median of positions."""
+        df = pd.DataFrame({
+            "pos": [100, 200, 300, 400, 500],
+        })
+
+        pos = _refine_breakpoint_position(df)
+        assert pos == 300  # median
+
+    def test_too_few_clips_uses_median(self) -> None:
+        """Only 2 soft-clipped reads (< 3 threshold) → median."""
+        df = pd.DataFrame({
+            "pos": [100, 200, 300, 400, 500],
+            "cigarstring": ["100M50S", "100M50S", "150M", "150M", "150M"],
+            "reference_end": [200, 300, 450, 550, 650],
+        })
+
+        pos = _refine_breakpoint_position(df)
+        assert pos == 300  # median of all positions
+
+    def test_left_side_clips(self) -> None:
+        """Left-side soft-clips should use reference_start as breakpoint."""
+        df = pd.DataFrame({
+            "pos": [47_382_600, 47_382_605, 47_382_610, 47_382_615, 47_382_620],
+            "cigarstring": ["50S100M", "50S100M", "50S100M", "50S100M", "50S100M"],
+            "reference_end": [47_382_700, 47_382_705, 47_382_710, 47_382_715, 47_382_720],
+        })
+
+        pos = _refine_breakpoint_position(df)
+        # Left clips → breakpoint at reference_start (pos)
+        # Clip positions = pos values: 600, 605, 610, 615, 620
+        assert pos == 47_382_610  # median of clip positions
