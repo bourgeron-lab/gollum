@@ -58,6 +58,7 @@ class GollumConfig:
     sample_name: str
     fasta_grch38: Path | None = None
     blacklist_bed: Path | None = None
+    use_default_blacklist: bool = True
     filter_params: FilterParams = field(default_factory=FilterParams)
     cluster_params: ClusterParams = field(default_factory=ClusterParams)
 
@@ -105,6 +106,12 @@ def load_acro_regions() -> dict[str, ChromRegion]:
         chrom: ChromRegion(chrom=chrom, saac_start=vals["saac_start"], saac_end=vals["saac_end"])
         for chrom, vals in data.items()
     }
+
+
+def load_default_blacklist() -> list[tuple[str, int, int]]:
+    """Load the bundled default blacklist shipped with gollum."""
+    resource_file = resources.files("gollumpy") / "resources" / "blacklist.bed"
+    return load_blacklist(Path(str(resource_file)))
 
 
 def load_blacklist(blacklist_bed: Path) -> list[tuple[str, int, int]]:

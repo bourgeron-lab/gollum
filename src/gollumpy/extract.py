@@ -8,7 +8,13 @@ from typing import TYPE_CHECKING
 import pandas as pd
 import pysam
 
-from gollumpy.config import ACROCENTRIC_CHROMS, is_blacklisted, load_acro_regions, load_blacklist
+from gollumpy.config import (
+    ACROCENTRIC_CHROMS,
+    is_blacklisted,
+    load_acro_regions,
+    load_blacklist,
+    load_default_blacklist,
+)
 
 if TYPE_CHECKING:
     from gollumpy.config import GollumConfig
@@ -29,6 +35,11 @@ def extract_discordant_reads_t2t(config: GollumConfig) -> pd.DataFrame:
     blacklist: list[tuple[str, int, int]] = []
     if config.blacklist_bed is not None:
         blacklist = load_blacklist(config.blacklist_bed)
+    elif config.use_default_blacklist:
+        blacklist = load_default_blacklist()
+
+    if blacklist:
+        logger.info("Blacklist loaded: %d regions", len(blacklist))
 
     reads: list[dict[str, str | int]] = []
 
@@ -157,6 +168,11 @@ def extract_discordant_reads_grch38(config: GollumConfig) -> pd.DataFrame:
     blacklist: list[tuple[str, int, int]] = []
     if config.blacklist_bed is not None:
         blacklist = load_blacklist(config.blacklist_bed)
+    elif config.use_default_blacklist:
+        blacklist = load_default_blacklist()
+
+    if blacklist:
+        logger.info("Blacklist loaded: %d regions", len(blacklist))
 
     # GRCh38 approximate centromere boundaries for q-arm extraction
     # These are rough boundaries — reads will be re-aligned to T2T anyway

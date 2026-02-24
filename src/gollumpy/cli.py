@@ -25,8 +25,10 @@ def shared_options(func):  # noqa: ANN001, ANN201
     )
     @click.option("-s", "--sample-name", default=None, help="Sample name (default: from filename)")
     @click.option(
-        "--blacklist-bed", default=None, type=click.Path(exists=True, path_type=Path), help="Blacklisted regions BED"
+        "--blacklist-bed", default=None, type=click.Path(exists=True, path_type=Path),
+        help="Override default blacklist with custom BED file",
     )
+    @click.option("--no-blacklist", is_flag=True, default=False, help="Disable default blacklist filtering")
     @click.option("--min-alignment-score", default=80, type=int, help="Minimum alignment matching length (mlen)")
     @click.option("--max-divergence", default=0.06, type=float, help="Maximum sequence divergence (NM/blen)")
     @click.option("--min-cluster-size", default=5, type=int, help="HDBSCAN min_cluster_size")
@@ -57,6 +59,7 @@ def _build_config(
     chrom: str,
     sample_name: str | None,
     blacklist_bed: Path | None,
+    no_blacklist: bool,
     min_alignment_score: int,
     max_divergence: float,
     min_cluster_size: int,
@@ -83,6 +86,7 @@ def _build_config(
         sample_name=sample_name,
         fasta_grch38=fasta_grch38,
         blacklist_bed=blacklist_bed,
+        use_default_blacklist=not no_blacklist,
         filter_params=FilterParams(
             min_alignment_score=min_alignment_score,
             max_divergence=max_divergence,
@@ -116,6 +120,7 @@ def t2t(
     chrom: str,
     sample_name: str | None,
     blacklist_bed: Path | None,
+    no_blacklist: bool,
     min_alignment_score: int,
     max_divergence: float,
     min_cluster_size: int,
@@ -137,6 +142,7 @@ def t2t(
         chrom=chrom,
         sample_name=sample_name,
         blacklist_bed=blacklist_bed,
+        no_blacklist=no_blacklist,
         min_alignment_score=min_alignment_score,
         max_divergence=max_divergence,
         min_cluster_size=min_cluster_size,
@@ -165,6 +171,7 @@ def grch38(
     chrom: str,
     sample_name: str | None,
     blacklist_bed: Path | None,
+    no_blacklist: bool,
     min_alignment_score: int,
     max_divergence: float,
     min_cluster_size: int,
@@ -191,6 +198,7 @@ def grch38(
         chrom=chrom,
         sample_name=sample_name,
         blacklist_bed=blacklist_bed,
+        no_blacklist=no_blacklist,
         min_alignment_score=min_alignment_score,
         max_divergence=max_divergence,
         min_cluster_size=min_cluster_size,

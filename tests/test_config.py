@@ -13,6 +13,7 @@ from gollumpy.config import (
     is_blacklisted,
     load_acro_regions,
     load_blacklist,
+    load_default_blacklist,
 )
 from gollumpy.models import Breakpoint, DiscordantRead
 
@@ -230,6 +231,45 @@ class TestLoadAcroRegions:
             assert region.chrom == chrom
             assert region.saac_start >= 0
             assert region.saac_end > region.saac_start
+
+
+class TestDefaultBlacklist:
+    def test_load_default_blacklist(self) -> None:
+        regions = load_default_blacklist()
+        assert len(regions) == 2
+        assert regions[0] == ("chr22", 14200000, 17100000)
+        assert regions[1] == ("chr22", 38861950, 38862750)
+
+    def test_use_default_blacklist_default_true(self, tmp_path: Path) -> None:
+        fasta = tmp_path / "ref.fa"
+        fasta.touch()
+        cram = tmp_path / "test.cram"
+        cram.touch()
+        config = GollumConfig(
+            target_chrom="chr22",
+            mode="t2t",
+            fasta_t2t=fasta,
+            input_file=cram,
+            output_dir=tmp_path / "out",
+            sample_name="test",
+        )
+        assert config.use_default_blacklist is True
+
+    def test_use_default_blacklist_disabled(self, tmp_path: Path) -> None:
+        fasta = tmp_path / "ref.fa"
+        fasta.touch()
+        cram = tmp_path / "test.cram"
+        cram.touch()
+        config = GollumConfig(
+            target_chrom="chr22",
+            mode="t2t",
+            fasta_t2t=fasta,
+            input_file=cram,
+            output_dir=tmp_path / "out",
+            sample_name="test",
+            use_default_blacklist=False,
+        )
+        assert config.use_default_blacklist is False
 
 
 class TestBlacklist:

@@ -227,6 +227,61 @@ class TestExtractDiscordantReadsT2T:
         assert list(df.columns) == expected_cols
 
 
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_default_blacklist_filters_known_noise_region(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Default blacklist auto-loads and filters chr22:38861950-38862750."""
+        config = _make_config(tmp_path)  # no blacklist_bed → uses default
+        assert config.use_default_blacklist is True
+
+        # Read at a position inside the default blacklist (38861950-38862750)
+        blacklisted_read = _mock_read(
+            query_name="noise_read",
+            reference_start=38862100,
+            next_reference_name="chr13",
+            next_reference_start=5000000,
+        )
+        # Read at a position outside the blacklist
+        good_read = _mock_read(
+            query_name="good_read",
+            reference_start=47097797,
+            next_reference_name="chr22",
+            next_reference_start=5000000,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [blacklisted_read, good_read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_t2t(config)
+        assert len(df) == 1
+        assert df.iloc[0]["read_id"] == "good_read"
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_no_blacklist_skips_filtering(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """With use_default_blacklist=False, no blacklist filtering occurs."""
+        config = _make_config(tmp_path, use_default_blacklist=False)
+
+        # Read at a position inside the default blacklist region
+        read_in_blacklist = _mock_read(
+            query_name="should_pass",
+            reference_start=38862100,
+            next_reference_name="chr13",
+            next_reference_start=5000000,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read_in_blacklist]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_t2t(config)
+        assert len(df) == 1
+        assert df.iloc[0]["read_id"] == "should_pass"
+
+
 class TestExtractMateSequences:
     @patch("gollumpy.extract.pysam.AlignmentFile")
     def test_extracts_mate_sequences(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:

@@ -29,6 +29,7 @@ class TestCLI:
         assert "--min-supporting-reads" in result.output
         assert "--max-cluster-span" in result.output
         assert "--min-cluster-span" in result.output
+        assert "--no-blacklist" in result.output
         assert "--require-target-saac" in result.output
 
     def test_grch38_help(self, mock_pipeline) -> None:  # noqa: ANN001
@@ -69,6 +70,7 @@ class TestCLI:
         assert config.cluster_params.min_supporting_reads == 5
         assert config.cluster_params.max_cluster_span == 10_000
         assert config.cluster_params.min_cluster_span == 50
+        assert config.use_default_blacklist is True
         assert config.filter_params.require_target_saac is False
 
     def test_t2t_custom_options(self, mock_pipeline, tmp_path: Path) -> None:  # noqa: ANN001
@@ -270,6 +272,26 @@ class TestCLI:
         assert result.exit_code == 0
         config = mock_pipeline.call_args[0][0]
         assert config.cluster_params.min_cluster_span == 100
+
+    def test_no_blacklist_flag(self, mock_pipeline, tmp_path: Path) -> None:  # noqa: ANN001
+        fasta = tmp_path / "ref.fa"
+        fasta.touch()
+        cram = tmp_path / "sample.cram"
+        cram.touch()
+        out = tmp_path / "out"
+
+        mock_pipeline.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "t2t", str(cram),
+            "-f", str(fasta),
+            "-o", str(out),
+            "--no-blacklist",
+        ])
+
+        assert result.exit_code == 0
+        config = mock_pipeline.call_args[0][0]
+        assert config.use_default_blacklist is False
 
     def test_version(self, mock_pipeline) -> None:  # noqa: ANN001
         runner = CliRunner()
