@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from gollumpy.cluster import (
-    _merge_nearby_clusters,
+    _filter_wide_clusters,
     _parse_clip_position,
     _refine_breakpoint_position,
     _trim_cluster_outliers,
@@ -418,83 +418,79 @@ class TestRefineBreakpointPosition:
         assert pos == 47_382_610  # median of clip positions
 
 
-class TestMergeNearbyClusters:
-    def test_merges_close_clusters(self) -> None:
-        """Two clusters 2kb apart should be merged."""
+class TestFilterWideClusters:
+    def test_wide_cluster_discarded(self) -> None:
+        """A cluster spanning > max_span should be reclassified as noise."""
         df = pd.DataFrame({
-            "read_id": [f"r{i}" for i in range(10)],
-            "chrom": ["chr22"] * 10,
-            "pos": [50_075_000] * 5 + [50_077_000] * 5,
-            "cluster": [0] * 5 + [1] * 5,
-            "probability": [0.9] * 10,
+            "read_id": [f"r{i}" for i in range(6)],
+            "chrom": ["chr22"] * 6,
+            "pos": [47_000_000, 47_005_000, 47_010_000, 47_015_000, 47_020_000, 47_025_000],
+            "cluster": [0] * 6,
+            "probability": [0.9] * 6,
         })
 
-        result = _merge_nearby_clusters(df, max_distance=5000)
-        # Both clusters should now have the same label
-        unique_clusters = result.loc[result["cluster"] != -1, "cluster"].unique()
-        assert len(unique_clusters) == 1
+        result = _filter_wide_clusters(df, max_span=10_000)
+        # Span = 25_000 > 10_000 → all reads become noise
+        assert (result["cluster"] == -1).all()
 
-    def test_preserves_distant_clusters(self) -> None:
-        """Two clusters 20kb apart should NOT be merged."""
+    def test_tight_cluster_kept(self) -> None:
+        """A cluster within max_span should be preserved."""
         df = pd.DataFrame({
-            "read_id": [f"r{i}" for i in range(10)],
-            "chrom": ["chr22"] * 10,
-            "pos": [47_000_000] * 5 + [47_020_000] * 5,
-            "cluster": [0] * 5 + [1] * 5,
-            "probability": [0.9] * 10,
+            "read_id": [f"r{i}" for i in range(5)],
+            "chrom": ["chr22"] * 5,
+            "pos": [47_097_700, 47_097_750, 47_097_800, 47_097_850, 47_097_900],
+            "cluster": [0] * 5,
+            "probability": [0.9] * 5,
         })
 
-        result = _merge_nearby_clusters(df, max_distance=5000)
-        unique_clusters = result.loc[result["cluster"] != -1, "cluster"].unique()
-        assert len(unique_clusters) == 2
-
-    def test_chain_merge(self) -> None:
-        """Three clusters A–B–C each within 3kb → all merge into one."""
-        df = pd.DataFrame({
-            "read_id": [f"r{i}" for i in range(15)],
-            "chrom": ["chr22"] * 15,
-            "pos": [50_000_000] * 5 + [50_003_000] * 5 + [50_006_000] * 5,
-            "cluster": [0] * 5 + [1] * 5 + [2] * 5,
-            "probability": [0.9] * 15,
-        })
-
-        result = _merge_nearby_clusters(df, max_distance=5000)
-        unique_clusters = result.loc[result["cluster"] != -1, "cluster"].unique()
-        # A merges B (3kb), but C is 6kb from A — only B merges with A
-        # C is 3kb from B, but B is already merged into A whose median is ~50001500
-        # A's original median is 50_000_000; C's median is 50_006_000 → 6kb apart > 5kb
-        # So only A+B merge, C stays separate
-        assert len(unique_clusters) == 2
+        result = _filter_wide_clusters(df, max_span=10_000)
+        # Span = 200 < 10_000 → cluster preserved
+        assert (result["cluster"] == 0).all()
 
     def test_noise_label_preserved(self) -> None:
-        """Reads labeled as noise (-1) should not participate in merging."""
+        """Reads already labeled as noise (-1) should stay as noise."""
         df = pd.DataFrame({
-            "read_id": [f"r{i}" for i in range(7)],
-            "chrom": ["chr22"] * 7,
-            "pos": [50_000_000, 50_000_100, 50_000_200, 50_001_000, 50_001_100, 50_001_200, 99_000_000],
-            "cluster": [0, 0, 0, 1, 1, 1, -1],
-            "probability": [0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.0],
+            "read_id": ["r0", "r1", "r2", "r3"],
+            "chrom": ["chr22"] * 4,
+            "pos": [47_097_800, 47_097_850, 47_097_900, 99_000_000],
+            "cluster": [0, 0, 0, -1],
+            "probability": [0.9, 0.9, 0.9, 0.0],
         })
 
-        result = _merge_nearby_clusters(df, max_distance=5000)
-        # Noise read should stay as noise
-        assert result.iloc[6]["cluster"] == -1
-        # The two clusters (1kb apart) should merge
-        unique_clusters = result.loc[result["cluster"] != -1, "cluster"].unique()
-        assert len(unique_clusters) == 1
+        result = _filter_wide_clusters(df, max_span=10_000)
+        # Tight cluster kept, noise stays noise
+        assert result.iloc[3]["cluster"] == -1
+        assert (result.iloc[:3]["cluster"] == 0).all()
 
-    def test_single_cluster_no_op(self) -> None:
-        """Single cluster should be returned unchanged."""
+    def test_exact_threshold_kept(self) -> None:
+        """A cluster with span == max_span should be kept (not strictly >)."""
         df = pd.DataFrame({
             "read_id": ["r0", "r1", "r2"],
             "chrom": ["chr22"] * 3,
-            "pos": [1000, 1100, 1200],
-            "cluster": [0, 0, 0],
+            "pos": [1_000_000, 1_005_000, 1_010_000],
+            "cluster": [0] * 3,
             "probability": [0.9] * 3,
         })
 
-        result = _merge_nearby_clusters(df, max_distance=5000)
-        assert len(result.loc[result["cluster"] != -1, "cluster"].unique()) == 1
+        result = _filter_wide_clusters(df, max_span=10_000)
+        # Span = 10_000 == max_span → kept (filter is strictly >)
+        assert (result["cluster"] == 0).all()
+
+    def test_mixed_tight_and_wide(self) -> None:
+        """Only the wide cluster should be discarded; tight one survives."""
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(8)],
+            "chrom": ["chr22"] * 8,
+            "pos": [47_097_800, 47_097_850, 47_097_900, 47_097_950,  # cluster 0: span=150
+                    10_000_000, 10_050_000, 10_100_000, 10_150_000],  # cluster 1: span=150_000
+            "cluster": [0, 0, 0, 0, 1, 1, 1, 1],
+            "probability": [0.9] * 8,
+        })
+
+        result = _filter_wide_clusters(df, max_span=10_000)
+        # Cluster 0 (span 150) kept, cluster 1 (span 150_000) discarded
+        assert (result.iloc[:4]["cluster"] == 0).all()
+        assert (result.iloc[4:]["cluster"] == -1).all()
 
 
 class TestReadPositionsInBreakpoints:

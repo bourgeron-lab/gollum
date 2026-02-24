@@ -92,52 +92,20 @@ def _trim_cluster_outliers(reads_df: pd.DataFrame) -> pd.DataFrame:
     return reads_df
 
 
-def _merge_nearby_clusters(
-    reads_df: pd.DataFrame,
-    max_distance: int = 5000,
-) -> pd.DataFrame:
-    """Merge clusters whose median positions are within *max_distance* bp.
+def _filter_wide_clusters(reads_df: pd.DataFrame, max_span: int) -> pd.DataFrame:
+    """Reclassify clusters exceeding *max_span* bp as noise.
 
-    Uses greedy merging: iterate clusters sorted by median position, and
-    absorb any subsequent cluster whose median is within *max_distance*
-    of the current canonical cluster's median.  The canonical cluster ID
-    is the one with the lowest median (i.e. leftmost).
+    Real breakpoints produce tight clusters (< 500 bp).  Clusters wider
+    than *max_span* are artefacts of HDBSCAN grouping scattered reads
+    and should be treated as noise.
     """
     reads_df = reads_df.copy()
-    cluster_ids = sorted(reads_df.loc[reads_df["cluster"] != -1, "cluster"].unique())
-
-    if len(cluster_ids) < 2:
-        return reads_df
-
-    # Compute median position per cluster
-    medians: dict[int, float] = {}
-    for cid in cluster_ids:
-        medians[cid] = reads_df.loc[reads_df["cluster"] == cid, "pos"].median()
-
-    # Sort by median position for deterministic greedy merge
-    sorted_ids = sorted(cluster_ids, key=lambda c: medians[c])
-
-    merged: dict[int, int] = {}  # old_cid → canonical_cid
-    for cid in sorted_ids:
-        if cid in merged:
-            continue
-        merged[cid] = cid
-        for other in sorted_ids:
-            if other <= cid or other in merged:
-                continue
-            if abs(medians[cid] - medians[other]) <= max_distance:
-                merged[other] = cid
-
-    # Apply merges
-    n_merged = 0
-    for old_cid, new_cid in merged.items():
-        if old_cid != new_cid:
-            reads_df.loc[reads_df["cluster"] == old_cid, "cluster"] = new_cid
-            n_merged += 1
-
-    if n_merged > 0:
-        logger.info("Merged %d nearby cluster(s)", n_merged)
-
+    for cid in reads_df.loc[reads_df["cluster"] != -1, "cluster"].unique():
+        mask = reads_df["cluster"] == cid
+        positions = reads_df.loc[mask, "pos"]
+        span = int(positions.max() - positions.min())
+        if span > max_span:
+            reads_df.loc[mask, "cluster"] = -1
     return reads_df
 
 
@@ -229,6 +197,7 @@ def cluster_breakpoints(
         min_samples=cluster_params.min_samples,
         cluster_selection_epsilon=cluster_params.cluster_selection_epsilon,
         allow_single_cluster=cluster_params.allow_single_cluster,
+        cluster_selection_method="leaf",
     )
     labels = clusterer.fit_predict(positions)
     probabilities = clusterer.probabilities_
@@ -245,9 +214,17 @@ def cluster_breakpoints(
     if n_trimmed > 0:
         logger.info("Trimmed %d outlier reads from clusters", n_trimmed)
 
-    # Merge clusters whose median positions are within 5 kb
-    reads_df = _merge_nearby_clusters(reads_df)
+    # Discard clusters wider than max_cluster_span (noise artefacts)
+    before_filter = clustered["cluster"].nunique()
+    reads_df = _filter_wide_clusters(reads_df, cluster_params.max_cluster_span)
     clustered = reads_df[reads_df["cluster"] != -1]
+    n_filtered = before_filter - clustered["cluster"].nunique() if not clustered.empty else before_filter
+    if n_filtered > 0:
+        logger.info(
+            "Removed %d cluster(s) exceeding %d bp span",
+            n_filtered,
+            cluster_params.max_cluster_span,
+        )
 
     if clustered.empty:
         logger.info("No clusters found by HDBSCAN")

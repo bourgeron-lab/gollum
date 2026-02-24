@@ -53,6 +53,7 @@ class TestClusterParams:
         assert params.cluster_selection_epsilon == 100.0
         assert params.allow_single_cluster is True
         assert params.min_supporting_reads == 5
+        assert params.max_cluster_span == 10_000
 
 
 class TestGollumConfig:

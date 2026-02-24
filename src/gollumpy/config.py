@@ -41,6 +41,7 @@ class ClusterParams:
     cluster_selection_epsilon: float = 100.0
     allow_single_cluster: bool = True
     min_supporting_reads: int = 5
+    max_cluster_span: int = 10_000
 
 
 @dataclass
