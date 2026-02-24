@@ -92,20 +92,59 @@ def _trim_cluster_outliers(reads_df: pd.DataFrame) -> pd.DataFrame:
     return reads_df
 
 
-def _filter_wide_clusters(reads_df: pd.DataFrame, max_span: int) -> pd.DataFrame:
-    """Reclassify clusters exceeding *max_span* bp as noise.
+def _refine_wide_clusters(
+    reads_df: pd.DataFrame,
+    max_span: int,
+    *,
+    gap_threshold: int = 500,
+    min_subcluster: int = 3,
+) -> pd.DataFrame:
+    """Extract tight sub-clusters from clusters exceeding *max_span* bp.
 
-    Real breakpoints produce tight clusters (< 500 bp).  Clusters wider
-    than *max_span* are artefacts of HDBSCAN grouping scattered reads
-    and should be treated as noise.
+    HDBSCAN sometimes absorbs tight signal reads into wide noise clusters.
+    Instead of discarding the entire cluster, we attempt gap-based splitting:
+
+    1. Sort positions within the wide cluster.
+    2. Find gaps > *gap_threshold* bp between consecutive reads.
+    3. Split into sub-groups at those gaps.
+    4. Keep sub-groups with ≥ *min_subcluster* reads AND span ≤ *max_span*.
+    5. Assign new cluster IDs to surviving sub-groups; discard the rest as noise.
+
+    Clusters already within *max_span* are left untouched.
     """
     reads_df = reads_df.copy()
+    next_cluster_id = int(reads_df["cluster"].max()) + 1 if not reads_df.empty else 0
+
     for cid in reads_df.loc[reads_df["cluster"] != -1, "cluster"].unique():
         mask = reads_df["cluster"] == cid
         positions = reads_df.loc[mask, "pos"]
         span = int(positions.max() - positions.min())
-        if span > max_span:
-            reads_df.loc[mask, "cluster"] = -1
+        if span <= max_span:
+            continue
+
+        # Sort by position and find large gaps
+        sorted_idx = positions.sort_values().index
+        sorted_pos = positions.loc[sorted_idx].values
+        gaps = np.diff(sorted_pos)
+        split_points = np.where(gaps > gap_threshold)[0] + 1
+
+        # Split into sub-groups
+        sub_indices = np.split(sorted_idx.values, split_points)
+
+        # Reclassify all reads in this cluster as noise first
+        reads_df.loc[mask, "cluster"] = -1
+
+        # Re-assign tight sub-groups that meet criteria
+        for sub_idx in sub_indices:
+            if len(sub_idx) < min_subcluster:
+                continue
+            sub_pos = reads_df.loc[sub_idx, "pos"]
+            sub_span = int(sub_pos.max() - sub_pos.min())
+            if sub_span > max_span:
+                continue
+            reads_df.loc[sub_idx, "cluster"] = next_cluster_id
+            next_cluster_id += 1
+
     return reads_df
 
 
@@ -218,16 +257,26 @@ def cluster_breakpoints(
     if n_trimmed > 0:
         logger.info("Trimmed %d outlier reads from clusters", n_trimmed)
 
-    # Discard clusters wider than max_cluster_span (noise artefacts)
+    # Refine wide clusters: extract tight sub-clusters via gap-based splitting
     before_filter = clustered["cluster"].nunique()
-    reads_df = _filter_wide_clusters(reads_df, cluster_params.max_cluster_span)
+    reads_df = _refine_wide_clusters(
+        reads_df,
+        cluster_params.max_cluster_span,
+        min_subcluster=cluster_params.min_cluster_size,
+    )
     clustered = reads_df[reads_df["cluster"] != -1]
-    n_filtered = before_filter - clustered["cluster"].nunique() if not clustered.empty else before_filter
-    if n_filtered > 0:
+    after_filter = clustered["cluster"].nunique() if not clustered.empty else 0
+    n_wide = before_filter - after_filter  # net clusters lost (may be negative if sub-clusters were extracted)
+    if n_wide > 0:
         logger.info(
-            "Removed %d cluster(s) exceeding %d bp span",
-            n_filtered,
+            "Refined %d wide cluster(s) exceeding %d bp span",
+            n_wide,
             cluster_params.max_cluster_span,
+        )
+    elif after_filter > before_filter:
+        logger.info(
+            "Extracted %d sub-cluster(s) from wide clusters",
+            after_filter - before_filter,
         )
 
     if clustered.empty:

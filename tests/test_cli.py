@@ -61,7 +61,7 @@ class TestCLI:
         assert config.filter_params.min_alignment_score == 80
         assert config.filter_params.max_divergence == 0.06
         assert config.filter_params.centromere_buffer == 5_000_000
-        assert config.cluster_params.min_samples == 5
+        assert config.cluster_params.min_samples == 3
         assert config.cluster_params.cluster_selection_epsilon == 100.0
         assert config.cluster_params.allow_single_cluster is True
         assert config.cluster_params.min_supporting_reads == 3

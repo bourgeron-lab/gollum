@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 
 from gollumpy.cluster import (
-    _filter_wide_clusters,
     _parse_clip_position,
     _refine_breakpoint_position,
+    _refine_wide_clusters,
     _trim_cluster_outliers,
     cluster_breakpoints,
     pre_cluster_reads,
@@ -418,9 +418,34 @@ class TestRefineBreakpointPosition:
         assert pos == 47_382_610  # median of clip positions
 
 
-class TestFilterWideClusters:
-    def test_wide_cluster_discarded(self) -> None:
-        """A cluster spanning > max_span should be reclassified as noise."""
+class TestRefineWideClusters:
+    def test_wide_cluster_with_tight_subgroup_extracted(self) -> None:
+        """A wide cluster containing a tight sub-group should extract it."""
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(8)],
+            "chrom": ["chr22"] * 8,
+            "pos": [
+                # Tight sub-group (span 200bp)
+                47_097_700, 47_097_750, 47_097_800, 47_097_850, 47_097_900,
+                # Scattered noise reads (>500bp gap from sub-group)
+                47_000_000, 47_010_000, 47_020_000,
+            ],
+            "cluster": [0] * 8,
+            "probability": [0.9] * 8,
+        })
+
+        result = _refine_wide_clusters(df, max_span=10_000, min_subcluster=3)
+        # Wide cluster (span 97_900) → split → tight 5-read sub-group extracted
+        tight_mask = result["pos"].isin([47_097_700, 47_097_750, 47_097_800, 47_097_850, 47_097_900])
+        assert (result.loc[tight_mask, "cluster"] != -1).all()
+        # All tight reads in same cluster
+        assert result.loc[tight_mask, "cluster"].nunique() == 1
+        # Scattered reads become noise
+        noise_mask = ~tight_mask
+        assert (result.loc[noise_mask, "cluster"] == -1).all()
+
+    def test_wide_cluster_no_tight_subgroups(self) -> None:
+        """A wide cluster with all scattered reads → all become noise."""
         df = pd.DataFrame({
             "read_id": [f"r{i}" for i in range(6)],
             "chrom": ["chr22"] * 6,
@@ -429,9 +454,38 @@ class TestFilterWideClusters:
             "probability": [0.9] * 6,
         })
 
-        result = _filter_wide_clusters(df, max_span=10_000)
-        # Span = 25_000 > 10_000 → all reads become noise
+        result = _refine_wide_clusters(df, max_span=10_000, min_subcluster=3)
+        # All reads are 5000bp apart (>500bp gap) → no sub-group has ≥3 reads
         assert (result["cluster"] == -1).all()
+
+    def test_wide_cluster_multiple_subgroups(self) -> None:
+        """Two tight sub-groups within one wide cluster → both extracted."""
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(8)],
+            "chrom": ["chr22"] * 8,
+            "pos": [
+                # Sub-group A (span 200bp)
+                47_000_000, 47_000_100, 47_000_200,
+                # >500bp gap
+                # Sub-group B (span 200bp)
+                47_010_000, 47_010_100, 47_010_200,
+                # Scattered noise
+                30_000_000, 40_000_000,
+            ],
+            "cluster": [0] * 8,
+            "probability": [0.9] * 8,
+        })
+
+        result = _refine_wide_clusters(df, max_span=10_000, min_subcluster=3)
+        # Both tight sub-groups extracted as separate clusters
+        grp_a = result["pos"].isin([47_000_000, 47_000_100, 47_000_200])
+        grp_b = result["pos"].isin([47_010_000, 47_010_100, 47_010_200])
+        assert (result.loc[grp_a, "cluster"] != -1).all()
+        assert (result.loc[grp_b, "cluster"] != -1).all()
+        assert result.loc[grp_a, "cluster"].iloc[0] != result.loc[grp_b, "cluster"].iloc[0]
+        # Noise reads discarded
+        noise = result["pos"].isin([30_000_000, 40_000_000])
+        assert (result.loc[noise, "cluster"] == -1).all()
 
     def test_tight_cluster_kept(self) -> None:
         """A cluster within max_span should be preserved."""
@@ -443,8 +497,8 @@ class TestFilterWideClusters:
             "probability": [0.9] * 5,
         })
 
-        result = _filter_wide_clusters(df, max_span=10_000)
-        # Span = 200 < 10_000 → cluster preserved
+        result = _refine_wide_clusters(df, max_span=10_000)
+        # Span = 200 < 10_000 → cluster preserved with original ID
         assert (result["cluster"] == 0).all()
 
     def test_noise_label_preserved(self) -> None:
@@ -457,7 +511,7 @@ class TestFilterWideClusters:
             "probability": [0.9, 0.9, 0.9, 0.0],
         })
 
-        result = _filter_wide_clusters(df, max_span=10_000)
+        result = _refine_wide_clusters(df, max_span=10_000)
         # Tight cluster kept, noise stays noise
         assert result.iloc[3]["cluster"] == -1
         assert (result.iloc[:3]["cluster"] == 0).all()
@@ -472,12 +526,12 @@ class TestFilterWideClusters:
             "probability": [0.9] * 3,
         })
 
-        result = _filter_wide_clusters(df, max_span=10_000)
+        result = _refine_wide_clusters(df, max_span=10_000)
         # Span = 10_000 == max_span → kept (filter is strictly >)
         assert (result["cluster"] == 0).all()
 
     def test_mixed_tight_and_wide(self) -> None:
-        """Only the wide cluster should be discarded; tight one survives."""
+        """Only the wide cluster should be refined; tight one survives."""
         df = pd.DataFrame({
             "read_id": [f"r{i}" for i in range(8)],
             "chrom": ["chr22"] * 8,
@@ -487,10 +541,35 @@ class TestFilterWideClusters:
             "probability": [0.9] * 8,
         })
 
-        result = _filter_wide_clusters(df, max_span=10_000)
-        # Cluster 0 (span 150) kept, cluster 1 (span 150_000) discarded
+        result = _refine_wide_clusters(df, max_span=10_000)
+        # Cluster 0 (span 150) kept as-is
         assert (result.iloc[:4]["cluster"] == 0).all()
+        # Cluster 1 (span 150_000): reads are 50kb apart (>500bp gap),
+        # no sub-group has ≥3 reads → all become noise
         assert (result.iloc[4:]["cluster"] == -1).all()
+
+    def test_subcluster_too_few_reads(self) -> None:
+        """Sub-groups with fewer than min_subcluster reads should be discarded."""
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(5)],
+            "chrom": ["chr22"] * 5,
+            "pos": [
+                # 2 reads (below min_subcluster=3)
+                47_097_800, 47_097_850,
+                # >500bp gap
+                # 3 reads (meets threshold)
+                48_000_000, 48_000_100, 48_000_200,
+            ],
+            "cluster": [0] * 5,
+            "probability": [0.9] * 5,
+        })
+
+        result = _refine_wide_clusters(df, max_span=10_000, min_subcluster=3)
+        # 2-read group → noise
+        assert (result.loc[result["pos"].isin([47_097_800, 47_097_850]), "cluster"] == -1).all()
+        # 3-read group → new cluster
+        grp = result["pos"].isin([48_000_000, 48_000_100, 48_000_200])
+        assert (result.loc[grp, "cluster"] != -1).all()
 
 
 class TestReadPositionsInBreakpoints:
