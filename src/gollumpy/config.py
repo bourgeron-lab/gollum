@@ -30,6 +30,7 @@ class FilterParams:
     min_alignment_score: int = 80
     max_divergence: float = 0.06
     centromere_buffer: int = 5_000_000
+    require_target_saac: bool = False
 
 
 @dataclass
@@ -40,7 +41,7 @@ class ClusterParams:
     min_samples: int = 5
     cluster_selection_epsilon: float = 100.0
     allow_single_cluster: bool = True
-    min_supporting_reads: int = 5
+    min_supporting_reads: int = 3
     max_cluster_span: int = 10_000
 
 

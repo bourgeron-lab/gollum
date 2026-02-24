@@ -151,16 +151,17 @@ def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
         generate_report([], aligned, config)
         return []
 
-    # Step 3b: Target-chrom PHR filter — keep only reads with ANY SAAC hit
-    # on the target chromosome (v1's isPHR semantics: any hit, not just best)
-    before_phr = len(aligned)
-    aligned = aligned[aligned["has_target_saac_hit"]]
-    logger.info("After target-chrom filter: %d/%d reads", len(aligned), before_phr)
+    # Step 3b: Optional target-chrom PHR filter
+    n_target = int(aligned["has_target_saac_hit"].sum())
+    logger.info("Reads with target-chrom SAAC hit: %d/%d", n_target, len(aligned))
 
-    if aligned.empty:
-        logger.info("No mates aligned to target SAAC — no ring detected")
-        generate_report([], aligned, config)
-        return []
+    if config.filter_params.require_target_saac:
+        aligned = aligned[aligned["has_target_saac_hit"]]
+        logger.info("After target-chrom filter: %d reads", len(aligned))
+        if aligned.empty:
+            logger.info("No mates aligned to target SAAC — no ring detected")
+            generate_report([], aligned, config)
+            return []
 
     # Step 4: Cluster breakpoints
     breakpoints, labeled_reads = cluster_breakpoints(aligned, config.cluster_params)

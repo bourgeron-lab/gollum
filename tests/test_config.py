@@ -38,6 +38,7 @@ class TestFilterParams:
         assert params.min_alignment_score == 80
         assert params.max_divergence == 0.06
         assert params.centromere_buffer == 5_000_000
+        assert params.require_target_saac is False
 
     def test_custom(self) -> None:
         params = FilterParams(min_mapq_r1=30, max_divergence=0.1)
@@ -52,7 +53,7 @@ class TestClusterParams:
         assert params.min_samples == 5
         assert params.cluster_selection_epsilon == 100.0
         assert params.allow_single_cluster is True
-        assert params.min_supporting_reads == 5
+        assert params.min_supporting_reads == 3
         assert params.max_cluster_span == 10_000
 
 

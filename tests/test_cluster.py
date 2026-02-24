@@ -371,8 +371,8 @@ class TestRefineBreakpointPosition:
         # Median of clip positions = 47382620
         assert pos == 47_382_620
 
-    def test_softclip_disagreement_falls_back_to_median(self) -> None:
-        """Clips with wide IQR (> 50bp) → fall back to median of all positions."""
+    def test_softclip_disagreement_falls_back_to_reference_end(self) -> None:
+        """Clips with wide IQR (> 50bp) → fall back to median of reference_end."""
         df = pd.DataFrame({
             "pos": [47_382_500, 47_382_510, 47_382_520, 47_382_530, 47_382_540],
             "cigarstring": ["100M50S", "100M50S", "100M50S", "100M50S", "100M50S"],
@@ -381,20 +381,20 @@ class TestRefineBreakpointPosition:
         })
 
         pos = _refine_breakpoint_position(df)
-        # IQR of clips: 75bp > 50bp → fallback to median of pos
-        assert pos == 47_382_520  # median of positions
+        # IQR of clips: 75bp > 50bp → fallback to median of reference_end
+        assert pos == 47_382_600  # median of reference_end
 
-    def test_no_cigar_columns_uses_median(self) -> None:
-        """DataFrame without cigarstring column → median of positions."""
+    def test_no_cigar_or_ref_end_uses_pos_median(self) -> None:
+        """DataFrame without cigarstring or reference_end → median of pos."""
         df = pd.DataFrame({
             "pos": [100, 200, 300, 400, 500],
         })
 
         pos = _refine_breakpoint_position(df)
-        assert pos == 300  # median
+        assert pos == 300  # median of pos (no reference_end column)
 
-    def test_too_few_clips_uses_median(self) -> None:
-        """Only 2 soft-clipped reads (< 3 threshold) → median."""
+    def test_too_few_clips_uses_reference_end(self) -> None:
+        """Only 2 soft-clipped reads (< 3 threshold) → median of reference_end."""
         df = pd.DataFrame({
             "pos": [100, 200, 300, 400, 500],
             "cigarstring": ["100M50S", "100M50S", "150M", "150M", "150M"],
@@ -402,7 +402,7 @@ class TestRefineBreakpointPosition:
         })
 
         pos = _refine_breakpoint_position(df)
-        assert pos == 300  # median of all positions
+        assert pos == 450  # median of reference_end
 
     def test_left_side_clips(self) -> None:
         """Left-side soft-clips should use reference_start as breakpoint."""

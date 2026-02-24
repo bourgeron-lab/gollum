@@ -159,7 +159,11 @@ def _refine_breakpoint_position(group: pd.DataFrame) -> int:
         if q3 - q1 < 50:  # clips agree within 50 bp
             return int(clips.median())
 
-    # Fallback: median of all R1 positions
+    # Fallback: use reference_end (read 3' end) when available — closer to
+    # the ring junction than reference_start for right-aligned reads.
+    if "reference_end" in group.columns:
+        return int(group["reference_end"].median())
+
     return int(group["pos"].median())
 
 

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from gollumpy.config import GollumConfig
+from gollumpy.config import FilterParams, GollumConfig
 from gollumpy.models import Breakpoint
 from gollumpy.pipeline import compute_ring_score, run_pipeline
 from gollumpy.report import generate_report
@@ -170,8 +170,11 @@ class TestRunPipeline:
         mock_align: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Reads with no SAAC hit on the target chrom are filtered out."""
-        config = _make_config(tmp_path)  # target_chrom = chr22
+        """Reads with no SAAC hit on the target chrom are filtered out when enabled."""
+        config = _make_config(
+            tmp_path,
+            filter_params=FilterParams(require_target_saac=True),
+        )
 
         reads_df = pd.DataFrame([
             {"read_id": f"r{i}", "chrom": "chr22", "pos": 47097797 + i, "mapq": 60,
