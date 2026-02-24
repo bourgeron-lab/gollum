@@ -17,6 +17,54 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def pre_cluster_reads(
+    reads_df: pd.DataFrame,
+    *,
+    min_cluster_size: int = 2,
+    min_samples: int = 2,
+    cluster_selection_epsilon: float = 500.0,
+) -> pd.DataFrame:
+    """Pre-cluster discordant reads by R1 position to remove scattered noise.
+
+    This replicates v1's first-pass clustering: a quick positional grouping
+    that discards reads not near any positional hotspot (HDBSCAN noise label).
+    Uses relaxed parameters to avoid discarding real signal.
+
+    Returns a filtered DataFrame containing only reads assigned to a cluster.
+    """
+    if reads_df.empty or "pos" not in reads_df.columns:
+        return reads_df
+
+    positions = np.array(reads_df["pos"], dtype=float).reshape(-1, 1)
+
+    if len(positions) < min_cluster_size:
+        return reads_df
+
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        cluster_selection_epsilon=cluster_selection_epsilon,
+        allow_single_cluster=True,
+    )
+    labels = clusterer.fit_predict(positions)
+
+    n_clustered = int(np.sum(labels != -1))
+    n_noise = int(np.sum(labels == -1))
+    n_clusters = len(set(labels) - {-1})
+    logger.info(
+        "Pre-clustering: %d clusters, %d reads kept, %d noise discarded",
+        n_clusters,
+        n_clustered,
+        n_noise,
+    )
+
+    if n_clustered == 0:
+        logger.info("Pre-clustering removed all reads — returning original set")
+        return reads_df
+
+    return reads_df[labels != -1].reset_index(drop=True)
+
+
 def cluster_breakpoints(
     reads_df: pd.DataFrame,
     cluster_params: ClusterParams,

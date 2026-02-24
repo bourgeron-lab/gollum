@@ -33,7 +33,7 @@ class TestChromRegion:
 class TestFilterParams:
     def test_defaults(self) -> None:
         params = FilterParams()
-        assert params.min_mapq_r1 == 60
+        assert params.min_mapq_r1 == 40
         assert params.samtools_mapq == 40
         assert params.min_alignment_score == 80
         assert params.max_divergence == 0.06

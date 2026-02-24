@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from gollumpy.cluster import cluster_breakpoints
+from gollumpy.cluster import cluster_breakpoints, pre_cluster_reads
 from gollumpy.config import ClusterParams
 
 
@@ -157,6 +157,81 @@ class TestClusterBreakpoints:
         assert len(result) == 1
         assert result[0].supporting_reads >= 3
 
+class TestPreClusterReads:
+    def test_empty_input(self) -> None:
+        result = pre_cluster_reads(pd.DataFrame())
+        assert result.empty
+
+    def test_no_pos_column(self) -> None:
+        df = pd.DataFrame({"read_id": ["r1"], "chrom": ["chr22"]})
+        result = pre_cluster_reads(df)
+        assert len(result) == 1  # returns input unchanged
+
+    def test_removes_scattered_noise(self) -> None:
+        """Scattered reads across the genome should be removed as noise."""
+        np.random.seed(42)
+        # Tight cluster of 10 reads + 5 scattered noise reads
+        cluster_pos = np.random.normal(47097797, 50, 10).astype(int)
+        noise_pos = np.array([1_000_000, 10_000_000, 20_000_000, 30_000_000, 40_000_000])
+        positions = np.concatenate([cluster_pos, noise_pos])
+
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(len(positions))],
+            "chrom": ["chr22"] * len(positions),
+            "pos": positions,
+        })
+
+        result = pre_cluster_reads(df, min_cluster_size=2, min_samples=2, cluster_selection_epsilon=500.0)
+
+        # Should keep the cluster but remove at least some noise
+        assert len(result) < len(df)
+        assert len(result) >= 10  # cluster should survive
+
+    def test_preserves_single_cluster(self) -> None:
+        """A single tight cluster should be fully preserved."""
+        np.random.seed(42)
+        positions = np.random.normal(47097797, 30, 15).astype(int)
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(15)],
+            "chrom": ["chr22"] * 15,
+            "pos": positions,
+        })
+
+        result = pre_cluster_reads(df)
+        assert len(result) == 15  # all reads should be kept
+
+    def test_returns_original_if_all_noise(self) -> None:
+        """If HDBSCAN marks everything as noise, return original (safety net)."""
+        # Two reads very far apart — HDBSCAN won't cluster them
+        df = pd.DataFrame({
+            "read_id": ["r0", "r1"],
+            "chrom": ["chr22", "chr22"],
+            "pos": [1_000_000, 50_000_000],
+        })
+        result = pre_cluster_reads(df, min_cluster_size=3)
+        # With min_cluster_size=3 and only 2 reads, falls through to
+        # "too few reads" path → returns original
+        assert len(result) == 2
+
+    def test_resets_index(self) -> None:
+        """Returned DataFrame should have a clean 0-based index."""
+        np.random.seed(42)
+        cluster_pos = np.random.normal(47097797, 30, 10).astype(int)
+        noise_pos = np.array([1_000_000, 10_000_000, 20_000_000])
+        positions = np.concatenate([cluster_pos, noise_pos])
+
+        df = pd.DataFrame({
+            "read_id": [f"r{i}" for i in range(len(positions))],
+            "chrom": ["chr22"] * len(positions),
+            "pos": positions,
+        })
+
+        result = pre_cluster_reads(df)
+        if len(result) < len(df):
+            assert list(result.index) == list(range(len(result)))
+
+
+class TestClusterEpsilon:
     def test_epsilon_merges_close_subclusters(self) -> None:
         # Two nearby subclusters within 100bp should merge with epsilon=100
         np.random.seed(42)

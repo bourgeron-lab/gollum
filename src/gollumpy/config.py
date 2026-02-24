@@ -25,7 +25,7 @@ class ChromRegion:
 class FilterParams:
     """Read and alignment filtering thresholds."""
 
-    min_mapq_r1: int = 60
+    min_mapq_r1: int = 40
     samtools_mapq: int = 40
     min_alignment_score: int = 80
     max_divergence: float = 0.06

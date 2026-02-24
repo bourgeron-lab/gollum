@@ -7,7 +7,7 @@ import math
 from typing import TYPE_CHECKING
 
 from gollumpy.align import align_mates, build_aligner, compute_acro_specificity, compute_mate_concordance
-from gollumpy.cluster import cluster_breakpoints
+from gollumpy.cluster import cluster_breakpoints, pre_cluster_reads
 from gollumpy.extract import (
     extract_discordant_reads_grch38,
     extract_discordant_reads_t2t,
@@ -35,13 +35,18 @@ def compute_ring_score(
 
     Components (each normalized to ~0–1):
       - mate_concordance (weight 0.25): fraction of mates converging on one SAAC chrom
-      - read_signal (weight 0.20): log2(supporting_reads) / 10, capped at 1.0
-      - confidence (weight 0.20): HDBSCAN mean probability (already 0–1)
+      - read_signal (weight 0.25): min(reads / 15, 1.0) — linear, caps at 15 reads
+      - confidence (weight 0.10): HDBSCAN mean probability (already 0–1)
       - specificity (weight 0.15): min(acro_specificity, 20) / 20, capped at 1.0
-      - span_tightness (weight 0.20): penalizes wide clusters via log10 scale
+      - span_tightness (weight 0.25): penalizes wide clusters via log10 scale
         (~1.0 at 1bp, ~0.57 at 1kb, ~0.14 at 1Mb, 0.0 at ≥10Mb)
+
+    v3 recalibration: read_signal uses linear scaling (was log2) to better
+    separate real clusters (10–20 reads) from noise clusters (3–5 reads).
+    Confidence weight reduced from 0.20 to 0.10 since HDBSCAN confidence
+    favours small tight clusters regardless of biological significance.
     """
-    read_signal = min(math.log2(max(supporting_reads, 1)) / 10.0, 1.0)
+    read_signal = min(supporting_reads / 15.0, 1.0)
 
     if acro_specificity is None:
         spec_value = 0.0
@@ -54,10 +59,10 @@ def compute_ring_score(
 
     score = (
         0.25 * mate_concordance
-        + 0.20 * read_signal
-        + 0.20 * confidence
+        + 0.25 * read_signal
+        + 0.10 * confidence
         + 0.15 * spec_value
-        + 0.20 * span_tightness
+        + 0.25 * span_tightness
     ) * 10.0
 
     return round(score, 3)
@@ -91,6 +96,17 @@ def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
 
     if reads.empty:
         logger.info("No discordant reads found — no ring detected")
+        generate_report([], reads, config)
+        return []
+
+    # Step 1b: Pre-cluster by R1 position to remove scattered noise
+    # (v1's two-pass architecture: positional pre-filter before alignment)
+    before_precluster = len(reads)
+    reads = pre_cluster_reads(reads)
+    logger.info("Pre-clustering: %d → %d reads", before_precluster, len(reads))
+
+    if reads.empty:
+        logger.info("No reads survived pre-clustering — no ring detected")
         generate_report([], reads, config)
         return []
 

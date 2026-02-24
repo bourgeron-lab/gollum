@@ -102,12 +102,41 @@ class TestRunPipeline:
         result = run_pipeline(config)
         assert result == []
 
+    @patch("gollumpy.pipeline.pre_cluster_reads")
+    @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
+    def test_pre_cluster_removes_all_reads(
+        self,
+        mock_extract: MagicMock,
+        mock_precluster: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """If pre-clustering removes all reads, pipeline returns empty."""
+        config = _make_config(tmp_path)
+        reads_df = pd.DataFrame([{
+            "read_id": "r1",
+            "chrom": "chr22",
+            "pos": 47097797,
+            "mapq": 60,
+            "mate_chrom": "chr22",
+            "mate_pos": 5000000,
+        }])
+        mock_extract.return_value = reads_df
+        mock_precluster.return_value = pd.DataFrame(
+            columns=["read_id", "chrom", "pos", "mapq", "mate_chrom", "mate_pos"]
+        )
+
+        result = run_pipeline(config)
+        assert result == []
+        mock_precluster.assert_called_once()
+
     @patch("gollumpy.pipeline.align_mates")
     @patch("gollumpy.pipeline.extract_mate_sequences")
+    @patch("gollumpy.pipeline.pre_cluster_reads", side_effect=lambda df: df)
     @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
     def test_no_alignments(
         self,
         mock_extract: MagicMock,
+        mock_precluster: MagicMock,
         mock_mate_seq: MagicMock,
         mock_align: MagicMock,
         tmp_path: Path,
@@ -131,10 +160,12 @@ class TestRunPipeline:
 
     @patch("gollumpy.pipeline.align_mates")
     @patch("gollumpy.pipeline.extract_mate_sequences")
+    @patch("gollumpy.pipeline.pre_cluster_reads", side_effect=lambda df: df)
     @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
     def test_phr_filter_removes_reads_without_target_saac_hit(
         self,
         mock_extract: MagicMock,
+        mock_precluster: MagicMock,
         mock_mate_seq: MagicMock,
         mock_align: MagicMock,
         tmp_path: Path,
@@ -172,10 +203,12 @@ class TestRunPipeline:
     @patch("gollumpy.pipeline.compute_acro_specificity")
     @patch("gollumpy.pipeline.align_mates")
     @patch("gollumpy.pipeline.extract_mate_sequences")
+    @patch("gollumpy.pipeline.pre_cluster_reads", side_effect=lambda df: df)
     @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
     def test_full_pipeline_with_detection(
         self,
         mock_extract: MagicMock,
+        mock_precluster: MagicMock,
         mock_mate_seq: MagicMock,
         mock_align: MagicMock,
         mock_specificity: MagicMock,
@@ -252,10 +285,12 @@ class TestRunPipeline:
     @patch("gollumpy.pipeline.cluster_breakpoints")
     @patch("gollumpy.pipeline.align_mates")
     @patch("gollumpy.pipeline.extract_mate_sequences")
+    @patch("gollumpy.pipeline.pre_cluster_reads", side_effect=lambda df: df)
     @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
     def test_no_clusters(
         self,
         mock_extract: MagicMock,
+        mock_precluster: MagicMock,
         mock_mate_seq: MagicMock,
         mock_align: MagicMock,
         mock_cluster: MagicMock,
@@ -293,10 +328,12 @@ class TestRunPipeline:
     @patch("gollumpy.pipeline.compute_acro_specificity")
     @patch("gollumpy.pipeline.align_mates")
     @patch("gollumpy.pipeline.extract_mate_sequences")
+    @patch("gollumpy.pipeline.pre_cluster_reads", side_effect=lambda df: df)
     @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
     def test_min_supporting_reads_filter(
         self,
         mock_extract: MagicMock,
+        mock_precluster: MagicMock,
         mock_mate_seq: MagicMock,
         mock_align: MagicMock,
         mock_specificity: MagicMock,
@@ -452,7 +489,7 @@ class TestComputeRingScore:
         assert tight > wide
 
     def test_concordance_and_span_tied_highest_weight(self) -> None:
-        """Mate concordance (0.25) and span_tightness (0.20) are top-weighted components."""
+        """Mate concordance (0.25) and span_tightness (0.25) are top-weighted components."""
         base = compute_ring_score(
             supporting_reads=10, confidence=0.5, acro_specificity=5.0,
             mate_concordance=0.0, span=500,
@@ -463,3 +500,41 @@ class TestComputeRingScore:
         )
         # Concordance adds 0.25 * 1.0 * 10 = 2.5 points
         assert with_concordance - base == pytest.approx(2.5)
+
+    def test_linear_read_signal(self) -> None:
+        """read_signal uses linear scaling: 5 reads → 0.33, 10 → 0.67, 15+ → 1.0."""
+        score_5 = compute_ring_score(
+            supporting_reads=5, confidence=0.5, acro_specificity=10.0,
+            mate_concordance=0.5, span=500,
+        )
+        score_10 = compute_ring_score(
+            supporting_reads=10, confidence=0.5, acro_specificity=10.0,
+            mate_concordance=0.5, span=500,
+        )
+        score_15 = compute_ring_score(
+            supporting_reads=15, confidence=0.5, acro_specificity=10.0,
+            mate_concordance=0.5, span=500,
+        )
+        score_30 = compute_ring_score(
+            supporting_reads=30, confidence=0.5, acro_specificity=10.0,
+            mate_concordance=0.5, span=500,
+        )
+        # Linear scaling: 10 reads should be substantially higher than 5
+        assert score_10 - score_5 > 0.5
+        # 15 and 30 reads should be capped at the same value
+        assert score_15 == pytest.approx(score_30)
+
+    def test_confidence_low_weight(self) -> None:
+        """Confidence weight is 0.10 — small clusters with high confidence shouldn't dominate."""
+        # Simulate: 5-read noise cluster with confidence=0.98
+        noise = compute_ring_score(
+            supporting_reads=5, confidence=0.98, acro_specificity=15.0,
+            mate_concordance=0.4, span=200,
+        )
+        # Simulate: 15-read real cluster with confidence=0.55
+        real = compute_ring_score(
+            supporting_reads=15, confidence=0.55, acro_specificity=15.0,
+            mate_concordance=0.7, span=500_000,
+        )
+        # Real cluster should still outscore noise despite lower confidence
+        assert real > noise
