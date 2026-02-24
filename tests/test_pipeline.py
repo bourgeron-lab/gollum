@@ -404,7 +404,7 @@ class TestRunPipeline:
 class TestComputeRingScore:
     def test_perfect_signal(self) -> None:
         """High reads, confidence, specificity, concordance, tight span → high score."""
-        score = compute_ring_score(
+        score, _ = compute_ring_score(
             supporting_reads=100,
             confidence=1.0,
             acro_specificity=float("inf"),
@@ -416,7 +416,7 @@ class TestComputeRingScore:
 
     def test_noise_signal(self) -> None:
         """Low reads, confidence, specificity, concordance, wide span → low score."""
-        score = compute_ring_score(
+        score, _ = compute_ring_score(
             supporting_reads=3,
             confidence=0.3,
             acro_specificity=1.5,
@@ -427,7 +427,7 @@ class TestComputeRingScore:
 
     def test_none_specificity(self) -> None:
         """None specificity should contribute 0 to the score."""
-        score = compute_ring_score(
+        score, _ = compute_ring_score(
             supporting_reads=10,
             confidence=0.8,
             acro_specificity=None,
@@ -436,7 +436,7 @@ class TestComputeRingScore:
         )
         assert score > 0
         # Compare with non-None specificity (should be lower)
-        score_with_spec = compute_ring_score(
+        score_with_spec, _ = compute_ring_score(
             supporting_reads=10,
             confidence=0.8,
             acro_specificity=10.0,
@@ -447,14 +447,14 @@ class TestComputeRingScore:
 
     def test_inf_specificity(self) -> None:
         """Infinite specificity should contribute max (1.0) to the spec component."""
-        score_inf = compute_ring_score(
+        score_inf, _ = compute_ring_score(
             supporting_reads=10,
             confidence=0.8,
             acro_specificity=float("inf"),
             mate_concordance=0.9,
             span=500,
         )
-        score_high = compute_ring_score(
+        score_high, _ = compute_ring_score(
             supporting_reads=10,
             confidence=0.8,
             acro_specificity=20.0,
@@ -466,7 +466,7 @@ class TestComputeRingScore:
 
     def test_score_range(self) -> None:
         """Ring score should always be between 0 and 10."""
-        score = compute_ring_score(
+        score, _ = compute_ring_score(
             supporting_reads=0,
             confidence=0.0,
             acro_specificity=None,
@@ -478,11 +478,11 @@ class TestComputeRingScore:
 
     def test_span_penalty(self) -> None:
         """Wide span should produce a lower score than tight span."""
-        tight = compute_ring_score(
+        tight, _ = compute_ring_score(
             supporting_reads=10, confidence=0.8, acro_specificity=10.0,
             mate_concordance=0.9, span=200,
         )
-        wide = compute_ring_score(
+        wide, _ = compute_ring_score(
             supporting_reads=10, confidence=0.8, acro_specificity=10.0,
             mate_concordance=0.9, span=5_000_000,
         )
@@ -490,11 +490,11 @@ class TestComputeRingScore:
 
     def test_concordance_and_span_tied_highest_weight(self) -> None:
         """Mate concordance (0.25) and span_tightness (0.25) are top-weighted components."""
-        base = compute_ring_score(
+        base, _ = compute_ring_score(
             supporting_reads=10, confidence=0.5, acro_specificity=5.0,
             mate_concordance=0.0, span=500,
         )
-        with_concordance = compute_ring_score(
+        with_concordance, _ = compute_ring_score(
             supporting_reads=10, confidence=0.5, acro_specificity=5.0,
             mate_concordance=1.0, span=500,
         )
@@ -503,19 +503,19 @@ class TestComputeRingScore:
 
     def test_linear_read_signal(self) -> None:
         """read_signal uses linear scaling: 5 reads → 0.33, 10 → 0.67, 15+ → 1.0."""
-        score_5 = compute_ring_score(
+        score_5, _ = compute_ring_score(
             supporting_reads=5, confidence=0.5, acro_specificity=10.0,
             mate_concordance=0.5, span=500,
         )
-        score_10 = compute_ring_score(
+        score_10, _ = compute_ring_score(
             supporting_reads=10, confidence=0.5, acro_specificity=10.0,
             mate_concordance=0.5, span=500,
         )
-        score_15 = compute_ring_score(
+        score_15, _ = compute_ring_score(
             supporting_reads=15, confidence=0.5, acro_specificity=10.0,
             mate_concordance=0.5, span=500,
         )
-        score_30 = compute_ring_score(
+        score_30, _ = compute_ring_score(
             supporting_reads=30, confidence=0.5, acro_specificity=10.0,
             mate_concordance=0.5, span=500,
         )
@@ -527,12 +527,12 @@ class TestComputeRingScore:
     def test_confidence_low_weight(self) -> None:
         """Confidence weight is 0.10 — small clusters with high confidence shouldn't dominate."""
         # Simulate: 5-read noise cluster with confidence=0.98
-        noise = compute_ring_score(
+        noise, _ = compute_ring_score(
             supporting_reads=5, confidence=0.98, acro_specificity=15.0,
             mate_concordance=0.4, span=200,
         )
         # Simulate: 15-read real cluster with confidence=0.55
-        real = compute_ring_score(
+        real, _ = compute_ring_score(
             supporting_reads=15, confidence=0.55, acro_specificity=15.0,
             mate_concordance=0.7, span=500_000,
         )
@@ -541,11 +541,11 @@ class TestComputeRingScore:
 
     def test_non_target_concordance_penalized(self) -> None:
         """Concordance penalised 70% when dominant SAAC chrom != target chrom."""
-        base = compute_ring_score(
+        base, _ = compute_ring_score(
             supporting_reads=15, confidence=0.8, acro_specificity=15.0,
             mate_concordance=0.5, span=500_000,
         )
-        penalized = compute_ring_score(
+        penalized, _ = compute_ring_score(
             supporting_reads=15, confidence=0.8, acro_specificity=15.0,
             mate_concordance=0.5, span=500_000,
             dominant_saac_chrom="chr14", target_chrom="chr22",
@@ -556,11 +556,11 @@ class TestComputeRingScore:
 
     def test_target_concordance_unpenalized(self) -> None:
         """No penalty when dominant SAAC chrom matches target chrom."""
-        base = compute_ring_score(
+        base, _ = compute_ring_score(
             supporting_reads=15, confidence=0.8, acro_specificity=15.0,
             mate_concordance=0.5, span=500_000,
         )
-        same_target = compute_ring_score(
+        same_target, _ = compute_ring_score(
             supporting_reads=15, confidence=0.8, acro_specificity=15.0,
             mate_concordance=0.5, span=500_000,
             dominant_saac_chrom="chr22", target_chrom="chr22",
@@ -569,13 +569,53 @@ class TestComputeRingScore:
 
     def test_target_concordance_empty_strings_no_penalty(self) -> None:
         """Empty dominant/target strings (backward compat) apply no penalty."""
-        base = compute_ring_score(
+        base, _ = compute_ring_score(
             supporting_reads=15, confidence=0.8, acro_specificity=15.0,
             mate_concordance=0.5, span=500_000,
         )
-        with_empty = compute_ring_score(
+        with_empty, _ = compute_ring_score(
             supporting_reads=15, confidence=0.8, acro_specificity=15.0,
             mate_concordance=0.5, span=500_000,
             dominant_saac_chrom="", target_chrom="",
         )
         assert base == pytest.approx(with_empty)
+
+    def test_returns_components_dict(self) -> None:
+        """compute_ring_score returns (score, components) with correct keys."""
+        score, components = compute_ring_score(
+            supporting_reads=10,
+            confidence=0.8,
+            acro_specificity=15.0,
+            mate_concordance=0.6,
+            span=500,
+        )
+        assert isinstance(score, float)
+        assert isinstance(components, dict)
+        expected_keys = {"read_signal", "span_tightness", "confidence", "specificity", "concordance"}
+        assert set(components.keys()) == expected_keys
+        # All values should be 0–1
+        for v in components.values():
+            assert 0.0 <= v <= 1.0
+        # Verify consistency: score ≈ weighted sum × 10
+        reconstructed = (
+            0.25 * components["concordance"]
+            + 0.25 * components["read_signal"]
+            + 0.10 * components["confidence"]
+            + 0.15 * components["specificity"]
+            + 0.25 * components["span_tightness"]
+        ) * 10.0
+        assert score == pytest.approx(reconstructed, abs=0.01)
+
+    def test_components_reflect_penalty(self) -> None:
+        """Concordance in components reflects the penalty when non-target."""
+        _, components_base = compute_ring_score(
+            supporting_reads=10, confidence=0.8, acro_specificity=10.0,
+            mate_concordance=0.5, span=500,
+        )
+        _, components_penalized = compute_ring_score(
+            supporting_reads=10, confidence=0.8, acro_specificity=10.0,
+            mate_concordance=0.5, span=500,
+            dominant_saac_chrom="chr14", target_chrom="chr22",
+        )
+        assert components_base["concordance"] == pytest.approx(0.5)
+        assert components_penalized["concordance"] == pytest.approx(0.15)

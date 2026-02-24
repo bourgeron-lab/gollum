@@ -92,6 +92,55 @@ def _trim_cluster_outliers(reads_df: pd.DataFrame) -> pd.DataFrame:
     return reads_df
 
 
+def _merge_nearby_clusters(
+    reads_df: pd.DataFrame,
+    max_distance: int = 5000,
+) -> pd.DataFrame:
+    """Merge clusters whose median positions are within *max_distance* bp.
+
+    Uses greedy merging: iterate clusters sorted by median position, and
+    absorb any subsequent cluster whose median is within *max_distance*
+    of the current canonical cluster's median.  The canonical cluster ID
+    is the one with the lowest median (i.e. leftmost).
+    """
+    reads_df = reads_df.copy()
+    cluster_ids = sorted(reads_df.loc[reads_df["cluster"] != -1, "cluster"].unique())
+
+    if len(cluster_ids) < 2:
+        return reads_df
+
+    # Compute median position per cluster
+    medians: dict[int, float] = {}
+    for cid in cluster_ids:
+        medians[cid] = reads_df.loc[reads_df["cluster"] == cid, "pos"].median()
+
+    # Sort by median position for deterministic greedy merge
+    sorted_ids = sorted(cluster_ids, key=lambda c: medians[c])
+
+    merged: dict[int, int] = {}  # old_cid → canonical_cid
+    for cid in sorted_ids:
+        if cid in merged:
+            continue
+        merged[cid] = cid
+        for other in sorted_ids:
+            if other <= cid or other in merged:
+                continue
+            if abs(medians[cid] - medians[other]) <= max_distance:
+                merged[other] = cid
+
+    # Apply merges
+    n_merged = 0
+    for old_cid, new_cid in merged.items():
+        if old_cid != new_cid:
+            reads_df.loc[reads_df["cluster"] == old_cid, "cluster"] = new_cid
+            n_merged += 1
+
+    if n_merged > 0:
+        logger.info("Merged %d nearby cluster(s)", n_merged)
+
+    return reads_df
+
+
 def _parse_clip_position(
     cigarstring: str,
     ref_start: int,
@@ -196,6 +245,10 @@ def cluster_breakpoints(
     if n_trimmed > 0:
         logger.info("Trimmed %d outlier reads from clusters", n_trimmed)
 
+    # Merge clusters whose median positions are within 5 kb
+    reads_df = _merge_nearby_clusters(reads_df)
+    clustered = reads_df[reads_df["cluster"] != -1]
+
     if clustered.empty:
         logger.info("No clusters found by HDBSCAN")
         return [], pd.DataFrame()
@@ -218,6 +271,7 @@ def cluster_breakpoints(
             supporting_reads=len(group),
             confidence=float(group["probability"].mean()),
             acro_specificity=None,
+            read_positions=sorted(group["pos"].astype(int).tolist()),
         ))
 
     return breakpoints, reads_df

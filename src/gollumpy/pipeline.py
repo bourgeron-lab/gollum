@@ -31,7 +31,7 @@ def compute_ring_score(
     *,
     dominant_saac_chrom: str = "",
     target_chrom: str = "",
-) -> float:
+) -> tuple[float, dict[str, float]]:
     """Compute composite ring score for a breakpoint (0–10).
 
     Higher values indicate a more likely real ring chromosome breakpoint.
@@ -54,6 +54,10 @@ def compute_ring_score(
     Ring breakpoints produce mates mapping to the target chromosome's own
     SAAC; non-target concordance indicates inter-chromosomal structural
     variants, not rings.
+
+    Returns:
+        Tuple of (score, components) where components is a dict of the
+        normalised sub-scores (pre-weight, 0–1 each).
     """
     # Penalize concordance when mates converge on a foreign SAAC chromosome
     if dominant_saac_chrom and target_chrom and dominant_saac_chrom != target_chrom:
@@ -78,7 +82,15 @@ def compute_ring_score(
         + 0.25 * span_tightness
     ) * 10.0
 
-    return round(score, 3)
+    components = {
+        "read_signal": read_signal,
+        "span_tightness": span_tightness,
+        "confidence": confidence,
+        "specificity": spec_value,
+        "concordance": mate_concordance,
+    }
+
+    return round(score, 3), components
 
 
 def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
@@ -189,9 +201,9 @@ def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
                 bp.mate_concordance = concordance
                 bp.dominant_saac_chrom = dominant_chrom
 
-            # Step 4c: Compute ring_score
+            # Step 4c: Compute ring_score and store component breakdown
             for bp in breakpoints:
-                bp.ring_score = compute_ring_score(
+                bp.ring_score, components = compute_ring_score(
                     bp.supporting_reads,
                     bp.confidence,
                     bp.acro_specificity,
@@ -200,6 +212,11 @@ def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
                     dominant_saac_chrom=bp.dominant_saac_chrom or "",
                     target_chrom=config.target_chrom,
                 )
+                bp.score_read_signal = components["read_signal"]
+                bp.score_span_tightness = components["span_tightness"]
+                bp.score_confidence = components["confidence"]
+                bp.score_specificity = components["specificity"]
+                bp.score_concordance = components["concordance"]
 
             # Sort by ring_score descending (best candidate first)
             breakpoints.sort(key=lambda bp: (bp.ring_score or 0.0), reverse=True)

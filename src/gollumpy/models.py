@@ -32,3 +32,9 @@ class Breakpoint:
     mate_concordance: float | None = None
     dominant_saac_chrom: str | None = None
     ring_score: float | None = None
+    read_positions: list[int] | None = None
+    score_read_signal: float | None = None
+    score_span_tightness: float | None = None
+    score_confidence: float | None = None
+    score_specificity: float | None = None
+    score_concordance: float | None = None
