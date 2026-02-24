@@ -33,8 +33,11 @@ def extract_discordant_reads_t2t(config: GollumConfig) -> pd.DataFrame:
     reads: list[dict[str, str | int]] = []
 
     with pysam.AlignmentFile(str(config.input_file), reference_filename=str(config.reference_fasta)) as bam:
-        # Fetch from q-arm: from centromere boundary to end of chromosome
-        for read in bam.fetch(config.target_chrom, target_region.saac_end):
+        # Fetch from q-arm: skip pericentromeric zone (buffer) to avoid artifacts
+        fetch_start = target_region.saac_end + config.filter_params.centromere_buffer
+        buf = config.filter_params.centromere_buffer
+        logger.info("Extracting from %s:%d (buffer=%d)", config.target_chrom, fetch_start, buf)
+        for read in bam.fetch(config.target_chrom, fetch_start):
             # Skip proper pairs — we want discordant reads
             if read.is_proper_pair:
                 continue
@@ -169,7 +172,10 @@ def extract_discordant_reads_grch38(config: GollumConfig) -> pd.DataFrame:
     reads: list[dict[str, str | int]] = []
 
     with pysam.AlignmentFile(str(config.input_file), reference_filename=str(config.reference_fasta)) as bam:
-        for read in bam.fetch(config.target_chrom, qarm_start):
+        fetch_start = qarm_start + config.filter_params.centromere_buffer
+        buf = config.filter_params.centromere_buffer
+        logger.info("Extracting from %s:%d (buffer=%d)", config.target_chrom, fetch_start, buf)
+        for read in bam.fetch(config.target_chrom, fetch_start):
             if read.is_proper_pair:
                 continue
             if read.is_unmapped:

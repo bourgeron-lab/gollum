@@ -34,6 +34,7 @@ def shared_options(func):  # noqa: ANN001, ANN201
     @click.option("--cluster-epsilon", default=100.0, type=float, help="HDBSCAN cluster_selection_epsilon (bp)")
     @click.option("--allow-single/--no-allow-single", default=True, help="Allow single-cluster detection")
     @click.option("--min-supporting-reads", default=5, type=int, help="Minimum reads per cluster to report")
+    @click.option("--centromere-buffer", default=5_000_000, type=int, help="Centromere exclusion buffer (bp)")
     @functools.wraps(func)
     def wrapper(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
         return func(*args, **kwargs)
@@ -56,6 +57,7 @@ def _build_config(
     cluster_epsilon: float,
     allow_single: bool,
     min_supporting_reads: int,
+    centromere_buffer: int,
     fasta_grch38: Path | None = None,
 ) -> GollumConfig:
     """Build GollumConfig from CLI arguments."""
@@ -74,6 +76,7 @@ def _build_config(
         filter_params=FilterParams(
             min_alignment_score=min_alignment_score,
             max_divergence=max_divergence,
+            centromere_buffer=centromere_buffer,
         ),
         cluster_params=ClusterParams(
             min_cluster_size=min_cluster_size,
@@ -107,6 +110,7 @@ def t2t(
     cluster_epsilon: float,
     allow_single: bool,
     min_supporting_reads: int,
+    centromere_buffer: int,
 ) -> None:
     """Detect ring chromosomes from T2T-CHM13 aligned BAM/CRAM."""
     config = _build_config(
@@ -124,6 +128,7 @@ def t2t(
         cluster_epsilon=cluster_epsilon,
         allow_single=allow_single,
         min_supporting_reads=min_supporting_reads,
+        centromere_buffer=centromere_buffer,
     )
     run_pipeline(config)
 
@@ -148,6 +153,7 @@ def grch38(
     cluster_epsilon: float,
     allow_single: bool,
     min_supporting_reads: int,
+    centromere_buffer: int,
     reference: Path,
 ) -> None:
     """Detect ring chromosomes from GRCh38-aligned BAM/CRAM.
@@ -170,6 +176,7 @@ def grch38(
         cluster_epsilon=cluster_epsilon,
         allow_single=allow_single,
         min_supporting_reads=min_supporting_reads,
+        centromere_buffer=centromere_buffer,
         fasta_grch38=reference,
     )
     run_pipeline(config)

@@ -58,6 +58,7 @@ class TestCLI:
         assert config.sample_name == "sample"
         assert config.filter_params.min_alignment_score == 80
         assert config.filter_params.max_divergence == 0.06
+        assert config.filter_params.centromere_buffer == 5_000_000
         assert config.cluster_params.min_samples == 5
         assert config.cluster_params.cluster_selection_epsilon == 100.0
         assert config.cluster_params.allow_single_cluster is True
@@ -182,6 +183,26 @@ class TestCLI:
         assert result.exit_code == 0
         config = mock_pipeline.call_args[0][0]
         assert config.cluster_params.min_supporting_reads == 10
+
+    def test_centromere_buffer_option(self, mock_pipeline, tmp_path: Path) -> None:  # noqa: ANN001
+        fasta = tmp_path / "ref.fa"
+        fasta.touch()
+        cram = tmp_path / "sample.cram"
+        cram.touch()
+        out = tmp_path / "out"
+
+        mock_pipeline.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "t2t", str(cram),
+            "-f", str(fasta),
+            "-o", str(out),
+            "--centromere-buffer", "3000000",
+        ])
+
+        assert result.exit_code == 0
+        config = mock_pipeline.call_args[0][0]
+        assert config.filter_params.centromere_buffer == 3_000_000
 
     def test_version(self, mock_pipeline) -> None:  # noqa: ANN001
         runner = CliRunner()

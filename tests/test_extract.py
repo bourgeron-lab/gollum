@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from gollumpy.config import GollumConfig
+from gollumpy.config import FilterParams, GollumConfig
 from gollumpy.extract import extract_discordant_reads_t2t, extract_mate_sequences
 
 
@@ -169,6 +169,38 @@ class TestExtractDiscordantReadsT2T:
 
         df = extract_discordant_reads_t2t(config)
         assert df.empty
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_centromere_buffer_shifts_fetch_start(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Centromere buffer pushes extraction start past pericentromeric zone."""
+        config = _make_config(tmp_path, filter_params=FilterParams(centromere_buffer=5_000_000))
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = []
+        mock_bam_class.return_value = mock_bam
+
+        extract_discordant_reads_t2t(config)
+
+        # chr22 SAAC ends at 14200000; with 5Mb buffer, fetch should start at 19200000
+        mock_bam.fetch.assert_called_once_with("chr22", 19_200_000)
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_zero_buffer_extracts_from_saac_boundary(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """With centromere_buffer=0, extraction starts at SAAC boundary."""
+        config = _make_config(tmp_path, filter_params=FilterParams(centromere_buffer=0))
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = []
+        mock_bam_class.return_value = mock_bam
+
+        extract_discordant_reads_t2t(config)
+
+        # chr22 SAAC ends at 14200000; with 0 buffer, fetch starts at 14200000
+        mock_bam.fetch.assert_called_once_with("chr22", 14_200_000)
 
     @patch("gollumpy.extract.pysam.AlignmentFile")
     def test_returns_empty_df_with_correct_columns(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:

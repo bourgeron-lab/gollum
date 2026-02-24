@@ -29,6 +29,7 @@ class FilterParams:
     samtools_mapq: int = 40
     min_alignment_score: int = 80
     max_divergence: float = 0.06
+    centromere_buffer: int = 5_000_000
 
 
 @dataclass

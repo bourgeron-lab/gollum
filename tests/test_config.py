@@ -37,6 +37,7 @@ class TestFilterParams:
         assert params.samtools_mapq == 40
         assert params.min_alignment_score == 80
         assert params.max_divergence == 0.06
+        assert params.centromere_buffer == 5_000_000
 
     def test_custom(self) -> None:
         params = FilterParams(min_mapq_r1=30, max_divergence=0.1)
