@@ -49,12 +49,13 @@ class TestFilterParams:
 class TestClusterParams:
     def test_defaults(self) -> None:
         params = ClusterParams()
-        assert params.min_cluster_size == 3
+        assert params.min_cluster_size == 5
         assert params.min_samples == 3
         assert params.cluster_selection_epsilon == 100.0
         assert params.allow_single_cluster is True
-        assert params.min_supporting_reads == 3
+        assert params.min_supporting_reads == 5
         assert params.max_cluster_span == 10_000
+        assert params.min_cluster_span == 50
 
 
 class TestGollumConfig:

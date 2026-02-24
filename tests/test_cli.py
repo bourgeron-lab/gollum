@@ -28,6 +28,7 @@ class TestCLI:
         assert "--allow-single" in result.output
         assert "--min-supporting-reads" in result.output
         assert "--max-cluster-span" in result.output
+        assert "--min-cluster-span" in result.output
         assert "--require-target-saac" in result.output
 
     def test_grch38_help(self, mock_pipeline) -> None:  # noqa: ANN001
@@ -61,11 +62,13 @@ class TestCLI:
         assert config.filter_params.min_alignment_score == 80
         assert config.filter_params.max_divergence == 0.06
         assert config.filter_params.centromere_buffer == 5_000_000
+        assert config.cluster_params.min_cluster_size == 5
         assert config.cluster_params.min_samples == 3
         assert config.cluster_params.cluster_selection_epsilon == 100.0
         assert config.cluster_params.allow_single_cluster is True
-        assert config.cluster_params.min_supporting_reads == 3
+        assert config.cluster_params.min_supporting_reads == 5
         assert config.cluster_params.max_cluster_span == 10_000
+        assert config.cluster_params.min_cluster_span == 50
         assert config.filter_params.require_target_saac is False
 
     def test_t2t_custom_options(self, mock_pipeline, tmp_path: Path) -> None:  # noqa: ANN001
@@ -247,6 +250,26 @@ class TestCLI:
         assert result.exit_code == 0
         config = mock_pipeline.call_args[0][0]
         assert config.cluster_params.max_cluster_span == 5000
+
+    def test_min_cluster_span_option(self, mock_pipeline, tmp_path: Path) -> None:  # noqa: ANN001
+        fasta = tmp_path / "ref.fa"
+        fasta.touch()
+        cram = tmp_path / "sample.cram"
+        cram.touch()
+        out = tmp_path / "out"
+
+        mock_pipeline.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "t2t", str(cram),
+            "-f", str(fasta),
+            "-o", str(out),
+            "--min-cluster-span", "100",
+        ])
+
+        assert result.exit_code == 0
+        config = mock_pipeline.call_args[0][0]
+        assert config.cluster_params.min_cluster_span == 100
 
     def test_version(self, mock_pipeline) -> None:  # noqa: ANN001
         runner = CliRunner()

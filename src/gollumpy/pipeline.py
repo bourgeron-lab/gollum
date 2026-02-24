@@ -170,26 +170,33 @@ def run_pipeline(config: GollumConfig) -> list[Breakpoint]:
         logger.info("No ring detected after clustering")
         generate_report([], aligned, config)
     else:
-        # Step 4a: Filter clusters by min_supporting_reads
+        # Step 4a: Filter clusters by min_supporting_reads and min_cluster_span
         clustered_reads = labeled_reads[labeled_reads["cluster"] != -1]
         cluster_ids = sorted(clustered_reads["cluster"].unique())
 
         min_reads = config.cluster_params.min_supporting_reads
-        keep_indices = [i for i, bp in enumerate(breakpoints) if bp.supporting_reads >= min_reads]
+        min_span = config.cluster_params.min_cluster_span
+        keep_indices = [
+            i for i, bp in enumerate(breakpoints)
+            if bp.supporting_reads >= min_reads
+            and (bp.pos_max - bp.pos_min) >= min_span
+        ]
 
-        if len(keep_indices) < len(breakpoints):
+        n_filtered = len(breakpoints) - len(keep_indices)
+        if n_filtered > 0:
             logger.info(
-                "Filtered %d/%d clusters with < %d supporting reads",
-                len(breakpoints) - len(keep_indices),
+                "Filtered %d/%d clusters (min_reads=%d, min_span=%d)",
+                n_filtered,
                 len(breakpoints),
                 min_reads,
+                min_span,
             )
 
         breakpoints = [breakpoints[i] for i in keep_indices]
         keep_cluster_ids = [cluster_ids[i] for i in keep_indices]
 
         if not breakpoints:
-            logger.info("No ring detected after min_supporting_reads filter")
+            logger.info("No ring detected after cluster filters")
             generate_report([], aligned, config)
         else:
             # Step 4b: Enrich surviving clusters with per-cluster metrics

@@ -403,6 +403,82 @@ class TestRunPipeline:
         # compute_acro_specificity should be called only once (for the surviving cluster)
         mock_specificity.assert_called_once()
 
+    @patch("gollumpy.pipeline.build_aligner")
+    @patch("gollumpy.pipeline.compute_mate_concordance")
+    @patch("gollumpy.pipeline.cluster_breakpoints")
+    @patch("gollumpy.pipeline.compute_acro_specificity")
+    @patch("gollumpy.pipeline.align_mates")
+    @patch("gollumpy.pipeline.extract_mate_sequences")
+    @patch("gollumpy.pipeline.pre_cluster_reads", side_effect=lambda df: df)
+    @patch("gollumpy.pipeline.extract_discordant_reads_t2t")
+    def test_min_cluster_span_filter(
+        self,
+        mock_extract: MagicMock,
+        mock_precluster: MagicMock,
+        mock_mate_seq: MagicMock,
+        mock_align: MagicMock,
+        mock_specificity: MagicMock,
+        mock_cluster: MagicMock,
+        mock_concordance: MagicMock,
+        mock_build_aligner: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Clusters with span < min_cluster_span are filtered out."""
+        from gollumpy.config import ClusterParams
+
+        config = _make_config(tmp_path)
+        config.cluster_params = ClusterParams(min_cluster_span=50)
+
+        reads_data = [
+            {
+                "read_id": f"r{i}",
+                "chrom": "chr22",
+                "pos": 47097797 + i * 10,
+                "mapq": 60,
+                "mate_chrom": "chr22",
+                "mate_pos": 5000000 + i,
+            }
+            for i in range(20)
+        ]
+        reads_df = pd.DataFrame(reads_data)
+        mock_extract.return_value = reads_df
+        mock_mate_seq.return_value = reads_df.assign(mate_sequence="ACGT" * 30)
+
+        aligned_df = reads_df.assign(
+            mate_sequence="ACGT" * 30,
+            best_mlen=148,
+            best_divergence=0.01,
+            n_saac_hits=1,
+            best_align_chrom="chr22",
+            has_target_saac_hit=True,
+        )
+        mock_align.return_value = aligned_df
+
+        # Two clusters: one with span=200 (passes), one with span=10 (filtered)
+        bp_wide = Breakpoint(
+            chrom="chr22", position=47097897, pos_min=47097797, pos_max=47097997,
+            supporting_reads=10, confidence=0.95, acro_specificity=None,
+        )
+        bp_narrow = Breakpoint(
+            chrom="chr22", position=25555035, pos_min=25555029, pos_max=25555039,
+            supporting_reads=6, confidence=0.80, acro_specificity=None,
+        )
+        labeled_df = aligned_df.copy()
+        labeled_df["cluster"] = [0] * 10 + [1] * 10
+        labeled_df["probability"] = 0.9
+        mock_cluster.return_value = ([bp_wide, bp_narrow], labeled_df)
+
+        mock_specificity.return_value = 9.7
+        mock_concordance.return_value = (0.95, "chr22")
+        mock_build_aligner.return_value = MagicMock()
+
+        result = run_pipeline(config)
+
+        # Only the wide-span cluster should survive
+        assert len(result) == 1
+        assert result[0].supporting_reads == 10
+        mock_specificity.assert_called_once()
+
 
 class TestComputeRingScore:
     def test_perfect_signal(self) -> None:

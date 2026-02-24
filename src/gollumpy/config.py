@@ -37,12 +37,13 @@ class FilterParams:
 class ClusterParams:
     """HDBSCAN clustering parameters."""
 
-    min_cluster_size: int = 3
+    min_cluster_size: int = 5
     min_samples: int = 3
     cluster_selection_epsilon: float = 100.0
     allow_single_cluster: bool = True
-    min_supporting_reads: int = 3
+    min_supporting_reads: int = 5
     max_cluster_span: int = 10_000
+    min_cluster_span: int = 50
 
 
 @dataclass

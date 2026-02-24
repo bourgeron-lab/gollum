@@ -29,12 +29,13 @@ def shared_options(func):  # noqa: ANN001, ANN201
     )
     @click.option("--min-alignment-score", default=80, type=int, help="Minimum alignment matching length (mlen)")
     @click.option("--max-divergence", default=0.06, type=float, help="Maximum sequence divergence (NM/blen)")
-    @click.option("--min-cluster-size", default=3, type=int, help="HDBSCAN min_cluster_size")
+    @click.option("--min-cluster-size", default=5, type=int, help="HDBSCAN min_cluster_size")
     @click.option("--min-samples", default=3, type=int, help="HDBSCAN min_samples")
     @click.option("--cluster-epsilon", default=100.0, type=float, help="HDBSCAN cluster_selection_epsilon (bp)")
     @click.option("--allow-single/--no-allow-single", default=True, help="Allow single-cluster detection")
-    @click.option("--min-supporting-reads", default=3, type=int, help="Minimum reads per cluster to report")
+    @click.option("--min-supporting-reads", default=5, type=int, help="Minimum reads per cluster to report")
     @click.option("--max-cluster-span", default=10_000, type=int, help="Maximum cluster span in bp (wider = noise)")
+    @click.option("--min-cluster-span", default=50, type=int, help="Minimum cluster span in bp (narrower = noise)")
     @click.option("--centromere-buffer", default=5_000_000, type=int, help="Centromere exclusion buffer (bp)")
     @click.option(
         "--require-target-saac/--no-require-target-saac",
@@ -64,6 +65,7 @@ def _build_config(
     allow_single: bool,
     min_supporting_reads: int,
     max_cluster_span: int,
+    min_cluster_span: int,
     centromere_buffer: int,
     require_target_saac: bool,
     fasta_grch38: Path | None = None,
@@ -94,6 +96,7 @@ def _build_config(
             allow_single_cluster=allow_single,
             min_supporting_reads=min_supporting_reads,
             max_cluster_span=max_cluster_span,
+            min_cluster_span=min_cluster_span,
         ),
     )
 
@@ -121,6 +124,7 @@ def t2t(
     allow_single: bool,
     min_supporting_reads: int,
     max_cluster_span: int,
+    min_cluster_span: int,
     centromere_buffer: int,
     require_target_saac: bool,
 ) -> None:
@@ -141,6 +145,7 @@ def t2t(
         allow_single=allow_single,
         min_supporting_reads=min_supporting_reads,
         max_cluster_span=max_cluster_span,
+        min_cluster_span=min_cluster_span,
         centromere_buffer=centromere_buffer,
         require_target_saac=require_target_saac,
     )
@@ -168,6 +173,7 @@ def grch38(
     allow_single: bool,
     min_supporting_reads: int,
     max_cluster_span: int,
+    min_cluster_span: int,
     centromere_buffer: int,
     require_target_saac: bool,
     reference: Path,
@@ -193,6 +199,7 @@ def grch38(
         allow_single=allow_single,
         min_supporting_reads=min_supporting_reads,
         max_cluster_span=max_cluster_span,
+        min_cluster_span=min_cluster_span,
         centromere_buffer=centromere_buffer,
         require_target_saac=require_target_saac,
         fasta_grch38=reference,
