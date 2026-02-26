@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Canonical GRCh38 chromosomes — anything outside this set is a decoy/unplaced contig
+CANONICAL_CHROMS = {f"chr{i}" for i in range(1, 23)} | {"chrX", "chrY", "chrM"}
+
 
 def extract_discordant_reads_t2t(config: GollumConfig) -> pd.DataFrame:
     """Extract discordant reads from a T2T-aligned BAM/CRAM.
@@ -160,10 +163,12 @@ def extract_mate_sequences(
 def extract_discordant_reads_grch38(config: GollumConfig) -> pd.DataFrame:
     """Extract discordant reads from a GRCh38-aligned BAM/CRAM.
 
-    In GRCh38, SAAC sequences are absent, so R2 reads from ring breakpoints will be:
-    - Unmapped
-    - Mapped to chrUn_* or alt contigs with low quality
-    - Mapped elsewhere with poor alignment (mapQ < 10)
+    In GRCh38, ring breakpoint mates (R2) map to three categories:
+    - Acrocentric short arms (e.g. chr21:7-9M, chr22:11-12M) — GRCh38
+      has partial short arm sequence where SAAC-targeting mates align
+    - Non-canonical contigs (chrUn_*, *_random, *_alt, named decoys
+      like KMT2C_chr21_*)
+    - Unmapped (no homologous sequence in GRCh38 at all)
     """
     blacklist: list[tuple[str, int, int]] = []
     if config.blacklist_bed is not None:
@@ -205,12 +210,18 @@ def extract_discordant_reads_grch38(config: GollumConfig) -> pd.DataFrame:
 
             # In GRCh38 mode, keep reads where mate is:
             # 1. Unmapped
-            # 2. Low mapQ (< 10)
-            # 3. On chrUn_*, *_random, or alt contigs
+            # 2. On a non-canonical contig (chrUn_*, *_random, *_alt, decoys)
+            # 3. On the short arm of any acrocentric chromosome
             mate_chrom = read.next_reference_name
-            mate_is_candidate = read.mate_is_unmapped or (
-                mate_chrom is not None
-                and (mate_chrom.startswith("chrUn_") or "_random" in mate_chrom or "_alt" in mate_chrom)
+            mate_pos = read.next_reference_start
+
+            mate_is_candidate = (
+                read.mate_is_unmapped
+                or (mate_chrom is not None and mate_chrom not in CANONICAL_CHROMS)
+                or (
+                    mate_chrom in ACROCENTRIC_CHROMS
+                    and mate_pos < grch38_qarm_starts.get(mate_chrom, 0)
+                )
             )
 
             if not mate_is_candidate:
@@ -227,7 +238,7 @@ def extract_discordant_reads_grch38(config: GollumConfig) -> pd.DataFrame:
                 "reference_end": read.reference_end,
                 "mapq": read.mapping_quality,
                 "mate_chrom": mate_chrom if mate_chrom is not None else "*",
-                "mate_pos": read.next_reference_start if not read.mate_is_unmapped else 0,
+                "mate_pos": mate_pos if not read.mate_is_unmapped else 0,
             })
 
     logger.info("GRCh38 discordant reads extracted: %d", len(reads))

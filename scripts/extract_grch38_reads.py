@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -31,6 +32,37 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+def _resolve_path(path: Path) -> Path:
+    """Resolve a path, handling broken symlinks on mounted volumes.
+
+    When a network volume is mounted (e.g. /Volumes/share/), symlinks inside
+    it may point to absolute server paths (e.g. /pasteur/helix/.../share/...).
+    These are broken locally. This function detects broken symlinks, reads the
+    target, and remaps by finding a common directory name between the target
+    and the parent mount path.
+    """
+    if path.exists():
+        return path
+    if not path.is_symlink():
+        return path
+
+    target = os.readlink(path)
+    # Walk up the parent directories to find a mount point name that
+    # also appears in the symlink target path
+    for parent in [path.parent, *path.parent.parents]:
+        mount_name = parent.name
+        if not mount_name:
+            continue
+        marker = f"/{mount_name}/"
+        if marker in target:
+            suffix = target[target.index(marker) + len(marker) :]
+            remapped = parent / suffix
+            if remapped.exists():
+                logger.info("Resolved broken symlink: %s -> %s", path.name, remapped)
+                return remapped
+    return path
 
 
 def _parse_clusters(summary_path: Path) -> list[dict]:
@@ -172,15 +204,15 @@ OUTPUT_COLUMNS = [
 
 @click.command()
 @click.option(
-    "--t2t-outputs", required=True, type=click.Path(exists=True, path_type=Path),
+    "--t2t-outputs", required=True, type=click.Path(path_type=Path),
     help="Directory with T2T output files (*.summary.tsv + *.supporting_reads.tsv)",
 )
 @click.option(
-    "--cram-dir", required=True, type=click.Path(exists=True, path_type=Path),
+    "--cram-dir", required=True, type=click.Path(path_type=Path),
     help="Directory with GRCh38 CRAM files (<sample>.cram)",
 )
 @click.option(
-    "--ref", required=True, type=click.Path(exists=True, path_type=Path),
+    "--ref", required=True, type=click.Path(path_type=Path),
     help="GRCh38 reference FASTA",
 )
 @click.option(
@@ -207,6 +239,16 @@ def main(
     For each breakpoint cluster identified by the T2T pipeline, finds the
     same reads (by read_id) in GRCh38 CRAMs and reports R1 + mate mapping.
     """
+    # Resolve paths (handles broken symlinks on mounted volumes)
+    t2t_outputs = _resolve_path(t2t_outputs)
+    cram_dir = _resolve_path(cram_dir)
+    ref = _resolve_path(ref)
+
+    for label, path in [("--t2t-outputs", t2t_outputs), ("--cram-dir", cram_dir), ("--ref", ref)]:
+        if not path.exists():
+            logger.error("%s path does not exist: %s", label, path)
+            sys.exit(1)
+
     # Discover samples from summary files
     summary_files = sorted(t2t_outputs.glob("*.summary.tsv"))
     if not summary_files:
@@ -223,8 +265,8 @@ def main(
             logger.warning("No supporting_reads.tsv for %s, skipping", sample)
             continue
 
-        # Find GRCh38 CRAM
-        cram_path = cram_dir / f"{sample}.cram"
+        # Find GRCh38 CRAM (resolve broken symlinks on mounted volumes)
+        cram_path = _resolve_path(cram_dir / f"{sample}.cram")
         if not cram_path.exists():
             logger.warning("No GRCh38 CRAM for %s at %s, skipping", sample, cram_path)
             continue

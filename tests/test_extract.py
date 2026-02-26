@@ -8,7 +8,11 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from gollumpy.config import FilterParams, GollumConfig
-from gollumpy.extract import extract_discordant_reads_t2t, extract_mate_sequences
+from gollumpy.extract import (
+    extract_discordant_reads_grch38,
+    extract_discordant_reads_t2t,
+    extract_mate_sequences,
+)
 
 
 def _make_config(tmp_path: Path, **overrides: object) -> GollumConfig:
@@ -17,7 +21,7 @@ def _make_config(tmp_path: Path, **overrides: object) -> GollumConfig:
     fasta.touch()
     cram = tmp_path / "test.cram"
     cram.touch()
-    defaults = {
+    defaults: dict[str, object] = {
         "target_chrom": "chr22",
         "mode": "t2t",
         "fasta_t2t": fasta,
@@ -26,6 +30,11 @@ def _make_config(tmp_path: Path, **overrides: object) -> GollumConfig:
         "sample_name": "test",
     }
     defaults.update(overrides)
+    # GRCh38 mode requires fasta_grch38
+    if defaults["mode"] == "grch38" and "fasta_grch38" not in defaults:
+        grch38_fasta = tmp_path / "grch38.fa"
+        grch38_fasta.touch()
+        defaults["fasta_grch38"] = grch38_fasta
     return GollumConfig(**defaults)  # type: ignore[arg-type]
 
 
@@ -314,3 +323,266 @@ class TestExtractMateSequences:
         result = extract_mate_sequences(config, empty_df)
         assert result.empty
         assert "mate_sequence" in result.columns
+
+
+class TestExtractDiscordantReadsGRCh38:
+    """Tests for GRCh38 discordant read extraction."""
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_extracts_mate_on_acrocentric_short_arm(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Mate on chr21 short arm (pos < 12M) should be kept."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            query_name="short_arm_read",
+            reference_start=47000000,
+            next_reference_name="chr21",
+            next_reference_start=8000000,  # chr21 short arm (< 12M)
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert len(df) == 1
+        assert df.iloc[0]["read_id"] == "short_arm_read"
+        assert df.iloc[0]["mate_chrom"] == "chr21"
+        assert df.iloc[0]["mate_pos"] == 8000000
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_extracts_mate_on_chr22_short_arm(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Mate on chr22 short arm (pos < 15M) should be kept."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            query_name="chr22_short_arm",
+            reference_start=47000000,
+            next_reference_name="chr22",
+            next_reference_start=11834000,  # chr22 short arm (< 15M)
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert len(df) == 1
+        assert df.iloc[0]["read_id"] == "chr22_short_arm"
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_extracts_mate_on_non_canonical_contig(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Mate on named decoy contig (KMT2C_chr21_*) should be kept."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            query_name="decoy_read",
+            reference_start=47000000,
+            next_reference_name="KMT2C_chr21_7687010_7731520",
+            next_reference_start=21335,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert len(df) == 1
+        assert df.iloc[0]["read_id"] == "decoy_read"
+        assert df.iloc[0]["mate_chrom"] == "KMT2C_chr21_7687010_7731520"
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_extracts_mate_unmapped(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Unmapped mate should be kept."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            query_name="unmapped_mate",
+            reference_start=47000000,
+            mate_is_unmapped=True,
+            next_reference_name=None,
+            next_reference_start=0,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert len(df) == 1
+        assert df.iloc[0]["read_id"] == "unmapped_mate"
+        assert df.iloc[0]["mate_chrom"] == "*"
+        assert df.iloc[0]["mate_pos"] == 0
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_extracts_mate_on_chrUn(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Mate on chrUn_* contig should be kept (regression)."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            query_name="chrUn_read",
+            reference_start=47000000,
+            next_reference_name="chrUn_GL000220v1",
+            next_reference_start=133412,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert len(df) == 1
+        assert df.iloc[0]["mate_chrom"] == "chrUn_GL000220v1"
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_extracts_mate_on_random_contig(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Mate on *_random contig should be kept (regression)."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            query_name="random_read",
+            reference_start=47000000,
+            next_reference_name="chr22_KI270733v1_random",
+            next_reference_start=151211,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert len(df) == 1
+        assert df.iloc[0]["mate_chrom"] == "chr22_KI270733v1_random"
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_filters_proper_pairs(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Proper pairs should be filtered."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            is_proper_pair=True,
+            next_reference_name="chr21",
+            next_reference_start=8000000,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert df.empty
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_filters_low_mapq(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Low mapQ R1 reads should be filtered."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            mapping_quality=30,
+            next_reference_name="chr21",
+            next_reference_start=8000000,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert df.empty
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_filters_mate_on_qarm(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Mate on q-arm of acrocentric chromosome (beyond short arm) should be filtered."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        # Mate at chr22:40000000 — well beyond q-arm start (15M), not short arm
+        read = _mock_read(
+            next_reference_name="chr22",
+            next_reference_start=40000000,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert df.empty
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_filters_mate_on_non_acrocentric_canonical(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Mate on canonical non-acrocentric chromosome (e.g. chr1) should be filtered."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        read = _mock_read(
+            next_reference_name="chr1",
+            next_reference_start=50000000,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert df.empty
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_returns_empty_df_with_correct_columns(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Empty result should have correct column schema."""
+        config = _make_config(tmp_path, mode="grch38")
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = []
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert df.empty
+        expected_cols = [
+            "read_id", "chrom", "pos", "cigarstring", "reference_end",
+            "mapq", "mate_chrom", "mate_pos",
+        ]
+        assert list(df.columns) == expected_cols
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_blacklist_filters_grch38(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Blacklisted R1 positions should be filtered in GRCh38 mode."""
+        bed = tmp_path / "blacklist.bed"
+        bed.write_text("chr22\t47000000\t47001000\n")
+
+        config = _make_config(tmp_path, mode="grch38", blacklist_bed=bed)
+
+        read = _mock_read(
+            reference_start=47000500,  # inside blacklist
+            next_reference_name="chr21",
+            next_reference_start=8000000,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert df.empty
