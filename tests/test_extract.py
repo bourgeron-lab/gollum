@@ -586,3 +586,34 @@ class TestExtractDiscordantReadsGRCh38:
 
         df = extract_discordant_reads_grch38(config)
         assert df.empty
+
+    @patch("gollumpy.extract.pysam.AlignmentFile")
+    def test_default_blacklist_filters_grch38_noise_region(self, mock_bam_class: MagicMock, tmp_path: Path) -> None:
+        """Default GRCh38 blacklist filters chr22:45595600-45595900 noise region."""
+        config = _make_config(tmp_path, mode="grch38")
+        assert config.use_default_blacklist is True
+
+        # Read at a position inside the GRCh38 default blacklist (45595600-45595900)
+        noise_read = _mock_read(
+            query_name="noise_45595",
+            reference_start=45595700,
+            next_reference_name="chr21",
+            next_reference_start=10489500,
+        )
+        # Read at a real breakpoint position
+        real_read = _mock_read(
+            query_name="real_bp",
+            reference_start=46893500,
+            next_reference_name="chr21",
+            next_reference_start=8000000,
+        )
+
+        mock_bam = MagicMock()
+        mock_bam.__enter__ = MagicMock(return_value=mock_bam)
+        mock_bam.__exit__ = MagicMock(return_value=False)
+        mock_bam.fetch.return_value = [noise_read, real_read]
+        mock_bam_class.return_value = mock_bam
+
+        df = extract_discordant_reads_grch38(config)
+        assert len(df) == 1
+        assert df.iloc[0]["read_id"] == "real_bp"

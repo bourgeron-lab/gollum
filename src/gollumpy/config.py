@@ -108,9 +108,14 @@ def load_acro_regions() -> dict[str, ChromRegion]:
     }
 
 
-def load_default_blacklist() -> list[tuple[str, int, int]]:
-    """Load the bundled default blacklist shipped with gollum."""
-    resource_file = resources.files("gollumpy") / "resources" / "blacklist.bed"
+def load_default_blacklist(mode: Literal["t2t", "grch38"] = "t2t") -> list[tuple[str, int, int]]:
+    """Load the bundled default blacklist shipped with gollum.
+
+    Separate blacklists exist for T2T and GRCh38 modes since noise regions
+    occur at different coordinates in each reference.
+    """
+    filename = "blacklist_t2t.bed" if mode == "t2t" else "blacklist_grch38.bed"
+    resource_file = resources.files("gollumpy") / "resources" / filename
     return load_blacklist(Path(str(resource_file)))
 
 

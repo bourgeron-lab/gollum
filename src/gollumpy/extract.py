@@ -39,7 +39,7 @@ def extract_discordant_reads_t2t(config: GollumConfig) -> pd.DataFrame:
     if config.blacklist_bed is not None:
         blacklist = load_blacklist(config.blacklist_bed)
     elif config.use_default_blacklist:
-        blacklist = load_default_blacklist()
+        blacklist = load_default_blacklist(config.mode)
 
     if blacklist:
         logger.info("Blacklist loaded: %d regions", len(blacklist))
@@ -174,7 +174,7 @@ def extract_discordant_reads_grch38(config: GollumConfig) -> pd.DataFrame:
     if config.blacklist_bed is not None:
         blacklist = load_blacklist(config.blacklist_bed)
     elif config.use_default_blacklist:
-        blacklist = load_default_blacklist()
+        blacklist = load_default_blacklist(config.mode)
 
     if blacklist:
         logger.info("Blacklist loaded: %d regions", len(blacklist))

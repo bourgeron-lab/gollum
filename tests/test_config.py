@@ -234,11 +234,23 @@ class TestLoadAcroRegions:
 
 
 class TestDefaultBlacklist:
-    def test_load_default_blacklist(self) -> None:
-        regions = load_default_blacklist()
+    def test_load_default_blacklist_t2t(self) -> None:
+        regions = load_default_blacklist("t2t")
         assert len(regions) == 2
         assert regions[0] == ("chr22", 14200000, 17100000)
         assert regions[1] == ("chr22", 38861950, 38862750)
+
+    def test_load_default_blacklist_grch38(self) -> None:
+        regions = load_default_blacklist("grch38")
+        assert len(regions) == 2
+        assert regions[0] == ("chr22", 22286000, 22287000)
+        assert regions[1] == ("chr22", 45595600, 45595900)
+
+    def test_load_default_blacklist_default_mode(self) -> None:
+        """Default mode is t2t."""
+        regions = load_default_blacklist()
+        assert len(regions) == 2
+        assert regions[0][1] == 14200000  # T2T blacklist first region start
 
     def test_use_default_blacklist_default_true(self, tmp_path: Path) -> None:
         fasta = tmp_path / "ref.fa"
